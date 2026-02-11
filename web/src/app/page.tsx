@@ -13,13 +13,13 @@ export default function Home() {
         <main className="mx-auto max-w-7xl px-4 py-8">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold tracking-tight">
-                    🎬 Media Recs
+                    🍿📚 Turborecs
                 </h1>
                 <p className="mt-1 text-muted-foreground">
                     Track what you watch and read. Discover what to try next.
                 </p>
             </div>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            {/* <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList className="mb-6">
                     <TabsTrigger value="library" className="gap-2">
                         <Film className="h-4 w-4" />
@@ -38,7 +38,7 @@ export default function Home() {
                 <TabsContent value="recommendations">
                     <Recommendations />
                 </TabsContent>
-            </Tabs>
+            </Tabs> */}
         </main>
     )
 }

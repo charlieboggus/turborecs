@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-    title: "Media Recs",
+    title: "Turborecs",
     description: "Personal media tracker and recommendation engine",
 }
 
