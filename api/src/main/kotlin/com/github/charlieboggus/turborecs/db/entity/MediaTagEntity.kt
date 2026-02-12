@@ -16,7 +16,7 @@ import java.util.UUID
 )
 class MediaTagEntity(
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", columnDefinition = "uuid")
     var id: UUID? = null,
 

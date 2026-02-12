@@ -7,9 +7,11 @@ import com.github.charlieboggus.turborecs.db.entity.enums.MediaType
 import com.github.charlieboggus.turborecs.db.repository.MediaItemRepository
 import com.github.charlieboggus.turborecs.db.repository.WatchHistoryRepository
 import com.github.charlieboggus.turborecs.service.enums.MediaSort
+import com.github.charlieboggus.turborecs.service.events.MediaLoggedEvent
 import com.github.charlieboggus.turborecs.web.dto.CreateBookRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateMovieRequest
 import com.github.charlieboggus.turborecs.web.dto.MediaItemResponse
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -39,7 +41,8 @@ private fun isCompletedStatus(status: MediaStatus): Boolean =
 @Service
 class MediaItemService(
     private val mediaItemRepository: MediaItemRepository,
-    private val watchHistoryRepository: WatchHistoryRepository
+    private val watchHistoryRepository: WatchHistoryRepository,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
 
     @Transactional(readOnly = true)
@@ -119,6 +122,8 @@ class MediaItemService(
                 createdAt = Instant.now()
             )
         )
+        val mediaId = requireNotNull(saved.id)
+        eventPublisher.publishEvent(MediaLoggedEvent(mediaId))
         return saved.toResponse(history)
     }
 
@@ -158,6 +163,8 @@ class MediaItemService(
                 createdAt = Instant.now()
             )
         )
+        val mediaId = requireNotNull(saved.id)
+        eventPublisher.publishEvent(MediaLoggedEvent(mediaId))
         return saved.toResponse(history)
     }
 

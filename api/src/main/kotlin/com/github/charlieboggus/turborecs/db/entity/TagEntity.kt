@@ -15,12 +15,13 @@ import java.util.UUID
     ]
 )
 class TagEntity(
+
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "id", columnDefinition = "uuid")
     var id: UUID? = null,
 
-    @Column(name = "name", nullable = false)
+    @Column(name = "name", nullable = false, columnDefinition = "citext")
     var name: String,
 
     @Enumerated(EnumType.STRING)

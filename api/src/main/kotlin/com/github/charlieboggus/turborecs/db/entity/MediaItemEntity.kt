@@ -8,6 +8,7 @@ import java.util.UUID
 @Entity
 @Table(name = "media_items")
 class MediaItemEntity(
+
     @Id
     @GeneratedValue
     @Column(name = "id", columnDefinition = "uuid")
@@ -20,11 +21,11 @@ class MediaItemEntity(
     var openLibraryId: String? = null,
 
     @Column(name = "title", nullable = false)
-    var title: String,
+    var title: String = "",
 
     @Enumerated(EnumType.STRING)
     @Column(name = "media_type", nullable = false)
-    var mediaType: MediaType,
+    var mediaType: MediaType = MediaType.MOVIE,
 
     @Column(name = "year")
     var year: Int? = null,
