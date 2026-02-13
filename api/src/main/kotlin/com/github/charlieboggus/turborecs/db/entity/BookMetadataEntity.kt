@@ -6,9 +6,10 @@ import java.util.UUID
 @Entity
 @Table(name = "book_metadata")
 class BookMetadataEntity(
+
     @Id
     @Column(name = "media_id", columnDefinition = "uuid")
-    var mediaId: UUID,
+    var mediaId: UUID? = null,
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @MapsId

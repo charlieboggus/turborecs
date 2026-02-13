@@ -1,16 +1,26 @@
 package com.github.charlieboggus.turborecs.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
 import com.github.charlieboggus.turborecs.db.entity.MediaItemEntity
 import com.github.charlieboggus.turborecs.db.entity.WatchHistoryEntity
 import com.github.charlieboggus.turborecs.db.entity.enums.MediaStatus
 import com.github.charlieboggus.turborecs.db.entity.enums.MediaType
+import com.github.charlieboggus.turborecs.db.entity.enums.TagCategory
+import com.github.charlieboggus.turborecs.db.repository.BookMetadataRepository
 import com.github.charlieboggus.turborecs.db.repository.MediaItemRepository
+import com.github.charlieboggus.turborecs.db.repository.MediaMetadataRepository
+import com.github.charlieboggus.turborecs.db.repository.MediaTagRepository
 import com.github.charlieboggus.turborecs.db.repository.WatchHistoryRepository
 import com.github.charlieboggus.turborecs.service.enums.MediaSort
 import com.github.charlieboggus.turborecs.service.events.MediaLoggedEvent
+import com.github.charlieboggus.turborecs.web.dto.BookMetadataDto
 import com.github.charlieboggus.turborecs.web.dto.CreateBookRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateMovieRequest
+import com.github.charlieboggus.turborecs.web.dto.MediaItemDetailResponse
 import com.github.charlieboggus.turborecs.web.dto.MediaItemResponse
+import com.github.charlieboggus.turborecs.web.dto.MovieMetadataDto
+import com.github.charlieboggus.turborecs.web.dto.TagWeightDto
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -42,6 +52,11 @@ private fun isCompletedStatus(status: MediaStatus): Boolean =
 class MediaItemService(
     private val mediaItemRepository: MediaItemRepository,
     private val watchHistoryRepository: WatchHistoryRepository,
+    private val mediaMetadataRepository: MediaMetadataRepository,
+    private val bookMetadataRepository: BookMetadataRepository,
+    private val mediaTagRepository: MediaTagRepository,
+    private val claudeProperties: ClaudeProperties,
+    private val objectMapper: ObjectMapper,
     private val eventPublisher: ApplicationEventPublisher
 ) {
 
@@ -84,6 +99,68 @@ class MediaItemService(
             }
         val latest = watchHistoryRepository.findFirstByMedia_IdOrderByCreatedAtDesc(id)
         return item.toResponse(latest)
+    }
+
+    @Transactional(readOnly = true)
+    fun getItemDetailById(id: UUID, modelVersion: String?): MediaItemDetailResponse {
+        val item = mediaItemRepository.findById(id).orElseThrow {
+            NoSuchElementException("Media item not found: $id")
+        }
+
+        val latest = watchHistoryRepository.findFirstByMedia_IdOrderByCreatedAtDesc(id)
+
+        val movieMeta = if (item.mediaType == MediaType.MOVIE) {
+            val mm = mediaMetadataRepository.findById(id).orElse(null)
+            mm?.let {
+                MovieMetadataDto(
+                    runtimeMinutes = it.runtimeMinutes,
+                    genres = it.genres.toList()
+                )
+            }
+        } else null
+
+        val bookMeta = if (item.mediaType == MediaType.BOOK) {
+            val bm = bookMetadataRepository.findById(id).orElse(null)
+            bm?.let {
+                BookMetadataDto(
+                    pageCount = it.pageCount,
+                    isbn = it.isbn,
+                    publisher = it.publisher
+                )
+            }
+        } else null
+
+        val mv = modelVersion ?: claudeProperties.model
+        val tags = mediaTagRepository.fetchTagsForMedia(id, mv)
+            .mapNotNull { r ->
+                val cat = runCatching { TagCategory.valueOf(r.getCategory()) }.getOrNull() ?: return@mapNotNull null
+                TagWeightDto(
+                    category = cat,
+                    name = r.getName(),
+                    weight = r.getWeight()
+                )
+            }
+
+        return MediaItemDetailResponse(
+            id = requireNotNull(item.id),
+            type = item.mediaType,
+            title = item.title,
+            year = item.year,
+            creator = item.creator,
+            description = item.description,
+            posterUrl = item.posterUrl,
+            createdAt = item.createdAt,
+            updatedAt = item.updatedAt,
+
+            latestStatus = latest?.status,
+            latestRating = latest?.rating,
+            latestNotes = latest?.notes,
+            latestWatchedAt = latest?.watchedAt,
+
+            movieMetadata = movieMeta,
+            bookMetadata = bookMeta,
+            tags = tags
+        )
     }
 
     @Transactional

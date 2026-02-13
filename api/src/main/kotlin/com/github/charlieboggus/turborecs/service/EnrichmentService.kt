@@ -302,17 +302,17 @@ class EnrichmentService(
         val posterUrl = coverId?.let { "https://covers.openlibrary.org/b/id/$it-L.jpg" }
 
         val author = doc.path("author_name").takeIf { it.isArray }?.firstOrNull()?.asText(null)
-            ?.takeIf { !it.isNullOrBlank() }
+            ?.takeIf { it.isNotBlank() }
 
         val year = doc.path("first_publish_year").takeIf { it.isInt }?.asInt()
 
         val pageCount = doc.path("number_of_pages_median").takeIf { it.isInt }?.asInt()
 
         val firstSentence = doc.path("first_sentence").takeIf { it.isArray }?.firstOrNull()?.asText(null)
-            ?.takeIf { !it.isNullOrBlank() }
+            ?.takeIf { it.isNotBlank() }
 
         val isbn = doc.path("isbn").takeIf { it.isArray }?.firstOrNull()?.asText(null)
-            ?.takeIf { !it.isNullOrBlank() }
+            ?.takeIf { it.isNotBlank() }
 
         return EnrichmentPayload.Book(
             BookEnrichment(
@@ -391,7 +391,7 @@ class EnrichmentService(
         } else {
             bookMetadataRepository.save(
                 BookMetadataEntity(
-                    mediaId = id,
+                    mediaId = null,
                     media = item,
                     pageCount = e.pageCount,
                     isbn = e.isbn,

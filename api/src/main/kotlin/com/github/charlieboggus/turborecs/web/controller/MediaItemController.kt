@@ -6,6 +6,7 @@ import com.github.charlieboggus.turborecs.service.MediaItemService
 import com.github.charlieboggus.turborecs.service.enums.MediaSort
 import com.github.charlieboggus.turborecs.web.dto.CreateBookRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateMovieRequest
+import com.github.charlieboggus.turborecs.web.dto.MediaItemDetailResponse
 import com.github.charlieboggus.turborecs.web.dto.MediaItemResponse
 import com.github.charlieboggus.turborecs.web.dto.RateItemRequest
 import com.github.charlieboggus.turborecs.web.dto.UpdateNotesRequest
@@ -30,8 +31,11 @@ class MediaItemController(
         service.getAllItems(type = type, status = status, sortBy = sortBy)
 
     @GetMapping("/{id}")
-    fun getById(@PathVariable id: UUID): MediaItemResponse =
-        service.getItemById(id)
+    fun getById(
+        @PathVariable id: UUID,
+        @RequestParam(required = false) modelVersion: String?
+    ): MediaItemDetailResponse =
+        service.getItemDetailById(id, modelVersion)
 
     @GetMapping("/search")
     fun search(@RequestParam query: String): List<MediaItemResponse> =

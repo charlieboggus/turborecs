@@ -1,6 +1,7 @@
 package com.github.charlieboggus.turborecs.service
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
 import com.github.charlieboggus.turborecs.db.entity.enums.MediaType
@@ -16,6 +17,13 @@ data class Recommendation(
     val reason: String,
     val matchedThemes: List<String>
 )
+
+private data class ParsedRecommendations(
+    val items: List<Recommendation>,
+    val partial: Boolean,           // true if parsing ended early (likely truncation)
+    val parseError: String? = null  // optional: useful for logging
+)
+
 
 @Service
 class RecommendationService(
@@ -56,7 +64,7 @@ class RecommendationService(
         mediaType: MediaType? = null,
         modelVersion: String = claudeProperties.model
     ): List<Recommendation> {
-        require(count in 1..50) { "count must be between 1 and 50" }
+        require(count in 1..15) { "count must be between 1 and 15" }
 
         val profile = tasteProfileService.buildTasteProfile(modelVersion)
 
@@ -92,10 +100,15 @@ class RecommendationService(
 
         val raw = claudeApiService.sendMessage(systemPrompt, userMessage)
         val parsed = parseRecommendations(raw)
+        if (parsed.partial) {
+            log.warn(
+                "Claude recommendations parse was partial (likely truncation). parsedItems={}, requestedCount={}, err={}",
+                parsed.items.size, count, parsed.parseError
+            )
+        }
 
-        // Extra safety filters (Claude sometimes “forgets” rules)
         val alreadyKnownLower = alreadyKnownTitles.asSequence().map { it.trim().lowercase() }.toHashSet()
-        val filtered = parsed
+        val filtered = parsed.items
             .asSequence()
             .filter { it.title.isNotBlank() }
             .filter { it.title.trim().lowercase() !in alreadyKnownLower }
@@ -103,7 +116,6 @@ class RecommendationService(
             .distinctBy { it.title.trim().lowercase() to it.type }
             .take(count)
             .toList()
-
         if (filtered.size < count) {
             log.warn(
                 "RecommendationService returned {} items (requested {}), after filtering already-known titles",
@@ -119,58 +131,93 @@ class RecommendationService(
         return scores.entries.joinToString(", ") { (k, v) -> "$k (${String.format("%.2f", v)})" }
     }
 
-    private fun parseRecommendations(raw: String): List<Recommendation> {
-        val cleaned = stripCodeFences(raw)
+    private fun parseRecommendations(raw: String): ParsedRecommendations {
+        val cleaned = stripCodeFences(raw).trim()
 
-        val root = try {
-            objectMapper.readTree(cleaned)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Claude returned invalid JSON for recommendations", e)
-        }
-
-        if (!root.isArray) {
+        // Fast fail if it doesn't even start like an array
+        if (!cleaned.startsWith("[")) {
             throw IllegalArgumentException("Claude recommendations response must be a JSON array")
         }
 
-        val out = ArrayList<Recommendation>(root.size())
-        for (node in root) {
-            if (!node.isObject) continue
+        val parser = objectMapper.factory.createParser(cleaned)
 
-            val title = node.path("title").asText("").trim()
-            val typeStr = node.path("type").asText("").trim()
-            val type = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: continue
-
-            val year = node.path("year").let { y ->
-                when {
-                    y.isInt -> y.asInt()
-                    y.isNumber -> y.asInt()
-                    y.isTextual -> y.asText().toIntOrNull()
-                    else -> null
-                }
-            }
-
-            val creator = node.path("creator").takeIf { !it.isMissingNode && !it.isNull }?.asText(null)?.trim()
-                ?.takeIf { it.isNotBlank() }
-
-            val reason = node.path("reason").asText("").trim()
-            if (title.isBlank() || reason.isBlank()) continue
-
-            val matchedThemes = parseStringArray(node.get("matchedThemes"))
-                .map { it.trim() }
-                .filter { it.isNotBlank() }
-                .take(8)
-
-            out += Recommendation(
-                title = title,
-                type = type,
-                year = year,
-                creator = creator,
-                reason = reason,
-                matchedThemes = matchedThemes
-            )
+        // Must start with array
+        val first = parser.nextToken()
+        if (first != JsonToken.START_ARRAY) {
+            throw IllegalArgumentException("Claude recommendations response must be a JSON array")
         }
 
-        return out
+        val out = mutableListOf<Recommendation>()
+        var partial = false
+        var parseError: String? = null
+
+        while (true) {
+            val next = parser.nextToken()
+
+            when (next) {
+                null -> {
+                    // truncated before END_ARRAY
+                    partial = true
+                    break
+                }
+                JsonToken.END_ARRAY -> break
+                else -> {
+                    try {
+                        // read exactly one element from the array
+                        val node: JsonNode = objectMapper.readTree(parser)
+                        val rec = nodeToRecommendationOrNull(node)
+                        if (rec != null) out += rec
+                    } catch (e: Exception) {
+                        // likely truncated mid-object, stop and return what we have
+                        partial = true
+                        parseError = e.message
+                        break
+                    }
+                }
+            }
+        }
+
+        return ParsedRecommendations(items = out, partial = partial, parseError = parseError)
+    }
+
+    private fun nodeToRecommendationOrNull(node: JsonNode): Recommendation? {
+        if (!node.isObject) return null
+
+        val title = node.path("title").asText("").trim()
+        val typeStr = node.path("type").asText("").trim()
+        val type = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: return null
+
+        val year = node.path("year").let { y ->
+            when {
+                y.isInt -> y.asInt()
+                y.isNumber -> y.asInt()
+                y.isTextual -> y.asText().toIntOrNull()
+                else -> null
+            }
+        }
+
+        val creator = node.path("creator")
+            .takeIf { !it.isMissingNode && !it.isNull }
+            ?.asText(null)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        val reason = node.path("reason").asText("").trim()
+        if (title.isBlank() || reason.isBlank()) return null
+
+        val matchedThemes = parseStringArray(node.get("matchedThemes"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .take(8)
+
+        return Recommendation(
+            title = title,
+            type = type,
+            year = year,
+            creator = creator,
+            reason = reason,
+            matchedThemes = matchedThemes
+        )
     }
 
     private fun parseStringArray(node: JsonNode?): List<String> {

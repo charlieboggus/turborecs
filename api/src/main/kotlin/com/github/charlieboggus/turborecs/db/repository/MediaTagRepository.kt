@@ -83,4 +83,29 @@ interface MediaTagRepository : JpaRepository<MediaTagEntity, UUID> {
         nativeQuery = true
     )
     fun fetchTasteRows(@Param("modelVersion") modelVersion: String): List<TasteRow>
+
+    interface TagRow {
+        fun getCategory(): String
+        fun getName(): String
+        fun getWeight(): Double
+    }
+
+    @Query(
+        value = """
+    select
+      (t.category)::text as category,
+      (t.name)::text     as name,
+      mt.weight          as weight
+    from media_tags mt
+    join tags t on t.id = mt.tag_id
+    where mt.media_id = :id
+      and mt.model_version = :modelVersion
+    order by t.category, mt.weight desc
+    """,
+        nativeQuery = true
+    )
+    fun fetchTagsForMedia(
+        @Param("id") id: UUID,
+        @Param("modelVersion") modelVersion: String
+    ): List<TagRow>
 }
