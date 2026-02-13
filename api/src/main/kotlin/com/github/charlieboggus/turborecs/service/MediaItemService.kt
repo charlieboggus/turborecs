@@ -78,7 +78,9 @@ class MediaItemService(
             if (type == null) mediaItemRepository.findAll()
             else mediaItemRepository.findAllByMediaType(type)
 
-        if (items.isEmpty()) return emptyList()
+        if (items.isEmpty()) {
+            return emptyList()
+        }
 
         val mediaIds = items.mapNotNull { it.id }
         val latestByMediaId = watchHistoryRepository
@@ -110,7 +112,8 @@ class MediaItemService(
         val pageable = PageRequest.of(page, size, Sort.by("createdAt").descending())
         val itemPage = if (type == null) {
             mediaItemRepository.findAll(pageable)
-        } else {
+        }
+        else {
             mediaItemRepository.findAllByMediaType(type, pageable)
         }
         val items = itemPage.content
@@ -366,9 +369,13 @@ class MediaItemService(
     @Transactional(readOnly = true)
     fun searchByTitle(query: String): List<MediaItemResponse> {
         val q = query.trim()
-        if (q.isEmpty()) return emptyList()
+        if (q.isEmpty()) {
+            return emptyList()
+        }
         val items = mediaItemRepository.findAllByTitleContainingIgnoreCase(q)
-        if (items.isEmpty()) return emptyList()
+        if (items.isEmpty()) {
+            return emptyList()
+        }
         val mediaIds = items.mapNotNull { it.id }
         val latestByMediaId = watchHistoryRepository
             .findLatestForMediaIds(mediaIds)
@@ -389,23 +396,20 @@ class MediaItemService(
     @Transactional(readOnly = true)
     fun searchByTitlePaged(query: String, page: Int, size: Int): PageResponse<MediaItemResponse> {
         val q = query.trim()
-        if (q.isEmpty()) return PageResponse(emptyList(), page, size, 0, 0)
-
+        if (q.isEmpty()) {
+            return PageResponse(emptyList(), page, size, 0, 0)
+        }
         val pageable = PageRequest.of(page, size)
         val result = mediaItemRepository.findByTitleContainingIgnoreCase(q, pageable)
-
         val items = result.content
         if (items.isEmpty()) {
             return PageResponse(emptyList(), page, size, result.totalElements, result.totalPages)
         }
-
         val mediaIds = items.mapNotNull { it.id }
         val latestByMediaId = watchHistoryRepository
             .findLatestForMediaIds(mediaIds)
             .associateBy { requireNotNull(it.media.id) }
-
         val dtos = items.map { it.toResponse(latestByMediaId[it.id]) }
-
         return PageResponse(
             items = dtos,
             page = result.number,

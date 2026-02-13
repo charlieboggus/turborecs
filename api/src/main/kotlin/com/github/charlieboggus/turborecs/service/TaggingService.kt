@@ -27,7 +27,7 @@ class TaggingService(
     private val tagRepository: TagRepository,
     private val mediaTagRepository: MediaTagRepository,
     private val objectMapper: ObjectMapper,
-    private val jdbcTemplate: JdbcTemplate, // used only for advisory lock; remove if you don’t want it
+    private val jdbcTemplate: JdbcTemplate
 ) {
     private val log = LoggerFactory.getLogger(TaggingService::class.java)
 
@@ -57,37 +57,32 @@ class TaggingService(
      */
     @Transactional
     fun tagItem(mediaId: UUID, modelVersion: String = claudeProperties.model) {
-        // Optional concurrency guard: prevents wasted Claude calls if multiple events fire at once.
-        // If you don't want it, delete this block + jdbcTemplate dependency.
         if (!tryAcquireAdvisoryLock(mediaId, modelVersion)) {
             log.info("Skipping tagging; advisory lock busy for mediaId={} modelVersion={}", mediaId, modelVersion)
             return
         }
-
         val media = mediaItemRepository.findById(mediaId).orElseThrow {
             NoSuchElementException("Media item not found: $mediaId")
         }
-
         val userMessage = buildString {
             appendLine("Title: \"${media.title}\"")
             appendLine("Media type: ${media.mediaType}")
         }
-
         val raw = claudeApiService.sendMessage(systemPrompt, userMessage)
-
-        val parsed = try {
+        val parsed =
+            try {
             parseClaudeTagJson(raw)
-        } catch (e: Exception) {
-            log.warn(
-                "Claude tag parse failed for mediaId={} modelVersion={}. rawPreview='{}' err={}",
-                mediaId,
-                modelVersion,
-                raw.take(300).replace("\n", "\\n"),
-                e.message
-            )
-            throw e
-        }
-
+            }
+            catch (e: Exception) {
+                log.warn(
+                    "Claude tag parse failed for mediaId={} modelVersion={}. rawPreview='{}' err={}",
+                    mediaId,
+                    modelVersion,
+                    raw.take(300).replace("\n", "\\n"),
+                    e.message
+                )
+                throw e
+            }
         // Build all replacement MediaTagEntity objects *before* deleting anything.
         val now = Instant.now()
         val replacements = buildMediaTags(media, parsed, now, modelVersion)
@@ -97,7 +92,6 @@ class TaggingService(
             log.warn("Claude returned no usable tags; leaving existing tags intact for mediaId={} modelVersion={}", mediaId, modelVersion)
             return
         }
-
         // Replace tags ONLY for this (mediaId, modelVersion)
         mediaTagRepository.deleteByMediaIdAndModelVersion(mediaId, modelVersion)
         mediaTagRepository.saveAll(replacements)
@@ -107,14 +101,16 @@ class TaggingService(
 
     fun tagAllUntagged(limit: Int = 200, modelVersion: String = claudeProperties.model): List<UUID> {
         val ids = mediaTagRepository.findUntaggedMediaIds(modelVersion, limit)
-        if (ids.isEmpty()) return emptyList()
-
+        if (ids.isEmpty()) {
+            return emptyList()
+        }
         val succeeded = mutableListOf<UUID>()
         for (id in ids) {
             try {
                 tagItem(id, modelVersion)
                 succeeded += id
-            } catch (e: Exception) {
+            }
+            catch (e: Exception) {
                 log.warn("Failed tagging mediaId={}: {}", id, e.message)
             }
         }
@@ -133,25 +129,26 @@ class TaggingService(
         for ((category, tagsToWeight) in parsed) {
             for ((rawName, rawWeight) in tagsToWeight) {
                 val name = normalizeTagName(rawName)
-                if (name.isEmpty()) continue
-
+                if (name.isEmpty()) {
+                    continue
+                }
                 val weight = sanitizeWeight(rawWeight)
-                if (weight <= 0.0) continue
-
+                if (weight <= 0.0) {
+                    continue
+                }
                 val key = category to name
                 deduped[key] = max(deduped[key] ?: 0.0, weight)
             }
         }
-
-        if (deduped.isEmpty()) return emptyList()
-
+        if (deduped.isEmpty()) {
+            return emptyList()
+        }
         // Resolve TagEntity for each unique (category,name)
         val tagsByKey: MutableMap<Pair<TagCategory, String>, TagEntity> = linkedMapOf()
         for ((key, _) in deduped) {
             val (category, name) = key
             tagsByKey[key] = findOrCreateTag(category, name)
         }
-
         return deduped.entries.map { (key, weight) ->
             MediaTagEntity(
                 id = null,
@@ -166,7 +163,6 @@ class TaggingService(
 
     private fun findOrCreateTag(category: TagCategory, normalizedName: String): TagEntity {
         tagRepository.findByCategoryAndNameIgnoreCase(category, normalizedName)?.let { return it }
-
         return try {
             tagRepository.save(
                 TagEntity(
@@ -175,7 +171,8 @@ class TaggingService(
                     category = category
                 )
             )
-        } catch (e: DataIntegrityViolationException) {
+        }
+        catch (e: DataIntegrityViolationException) {
             // Another request likely created it concurrently; re-fetch.
             tagRepository.findByCategoryAndNameIgnoreCase(category, normalizedName) ?: throw e
         }
@@ -192,18 +189,23 @@ class TaggingService(
     private fun parseClaudeTagJson(raw: String): Map<TagCategory, Map<String, Double>> {
         val cleaned = stripCodeFences(raw)
 
-        val root = try {
-            objectMapper.readTree(cleaned)
-        } catch (e: Exception) {
-            throw IllegalArgumentException("Claude returned invalid JSON", e)
-        }
+        val root =
+            try {
+                objectMapper.readTree(cleaned)
+            }
+            catch (e: Exception) {
+                throw IllegalArgumentException("Claude returned invalid JSON", e)
+            }
 
-        if (!root.isObject) throw IllegalArgumentException("Claude response must be a JSON object")
+        if (!root.isObject) {
+            throw IllegalArgumentException("Claude response must be a JSON object")
+        }
 
         fun parseCategory(key: String): Map<String, Double> {
             val node = root.get(key) ?: throw IllegalArgumentException("Claude response missing required key '$key'")
-            if (!node.isObject) throw IllegalArgumentException("Claude response key '$key' must map to {tagName: weight}")
-
+            if (!node.isObject) {
+                throw IllegalArgumentException("Claude response key '$key' must map to {tagName: weight}")
+            }
             val out = LinkedHashMap<String, Double>()
             val it = node.fields()
             while (it.hasNext()) {
@@ -216,7 +218,9 @@ class TaggingService(
                     weightNode.isTextual -> weightNode.asText().toDoubleOrNull()
                     else -> null
                 }
-                if (w != null) out[name] = w
+                if (w != null) {
+                    out[name] = w
+                }
             }
             return out
         }
@@ -231,17 +235,16 @@ class TaggingService(
 
     private fun stripCodeFences(raw: String): String {
         val s = raw.trim()
-
         // Handle ```json ... ``` or ``` ... ```
         val fenceStart = s.startsWith("```")
-        if (!fenceStart) return s
-
+        if (!fenceStart) {
+            return s
+        }
         // remove first line fence
         val withoutFirstFence = s
             .removePrefix("```json")
             .removePrefix("```")
             .trimStart()
-
         // remove trailing fence
         return withoutFirstFence
             .removeSuffix("```")

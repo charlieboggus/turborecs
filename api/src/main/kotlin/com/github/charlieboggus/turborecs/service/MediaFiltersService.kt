@@ -17,12 +17,9 @@ class MediaFiltersService(
 ) {
     fun getFilters(modelVersion: String?): MediaFiltersResponse {
         val mv = modelVersion ?: claudeProperties.model
-
         val genres = runCatching { mediaMetadataRepository.findDistinctGenres() }.getOrElse { emptyList() }
-
         val topTags = mediaTagRepository.findPopularTags(modelVersion = mv, limit = 50)
             .map { TagSummaryDto(category = it.getCategory(), name = it.getName(), count = it.getCnt()) }
-
         return MediaFiltersResponse(
             types = MediaType.entries,
             statuses = MediaStatus.entries,

@@ -24,28 +24,19 @@ class AdminService(
     @Transactional(readOnly = true)
     fun stats(modelVersion: String?): AdminStatsResponse {
         val mv = modelVersion ?: claudeProperties.model
-
         val total = mediaItemRepository.count()
-
         val itemsByType = MediaType.entries.associateWith { t ->
             mediaItemRepository.countByMediaType(t)
         }
-
-        // "latest status counts" - simplest approach for now:
-        // pull latest for all IDs (fine at your current scale; can optimize later)
         val ids = mediaItemRepository.findAllIds()
         val latest = if (ids.isEmpty()) emptyList() else watchHistoryRepository.findLatestForMediaIds(ids)
-
         val latestStatusCounts = latest.groupingBy { it.status }.eachCount().mapValues { it.value.toLong() }
             .let { counts ->
-                // ensure all statuses exist as keys (optional)
                 MediaStatus.entries.associateWith { s -> counts[s] ?: 0L }
             }
-
         val taggedCount = mediaTagRepository.countDistinctTaggedMedia(mv)
         val movieMetaCount = mediaMetadataRepository.count()
         val bookMetaCount = bookMetadataRepository.count()
-
         return AdminStatsResponse(
             totalItems = total,
             itemsByType = itemsByType,

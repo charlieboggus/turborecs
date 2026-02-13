@@ -16,14 +16,16 @@ class TaggingBatchService(
 
     fun tagAllUntagged(limit: Int = 200, modelVersion: String = claudeProperties.model): List<UUID> {
         val ids = mediaTagRepository.findUntaggedMediaIds(modelVersion, limit)
-        if (ids.isEmpty()) return emptyList()
-
+        if (ids.isEmpty()) {
+            return emptyList()
+        }
         val succeeded = mutableListOf<UUID>()
         for (id in ids) {
             try {
                 taggingService.tagItem(id, modelVersion)
                 succeeded += id
-            } catch (e: Exception) {
+            }
+            catch (e: Exception) {
                 log.warn("Failed tagging mediaId={}: {}", id, e.message)
             }
         }

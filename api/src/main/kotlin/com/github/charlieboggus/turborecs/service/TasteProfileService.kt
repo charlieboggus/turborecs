@@ -54,7 +54,9 @@ class TasteProfileService(
 
         for (r in rows) {
             val title = r.getTitle().trim()
-            if (title.isEmpty()) continue
+            if (title.isEmpty()) {
+                continue
+            }
 
             val rating = r.getRating().coerceIn(0, 5)
             ratingByTitle[title] = rating
@@ -65,11 +67,15 @@ class TasteProfileService(
             }
 
             val tagName = normalizeTagName(r.getTagName())
-            if (tagName.isEmpty()) continue
+            if (tagName.isEmpty()) {
+                continue
+            }
 
             val tagWeight = r.getTagWeight()
             val contribution = tagWeight * ratingMultiplier(rating)
-            if (contribution == 0.0) continue
+            if (contribution == 0.0) {
+                continue
+            }
 
             val map = accum.getValue(category)
             map[tagName] = (map[tagName] ?: 0.0) + contribution
@@ -102,7 +108,9 @@ class TasteProfileService(
 
     private fun parseCategoryOrNull(raw: String?): TagCategory? {
         val s = raw?.trim().orEmpty()
-        if (s.isEmpty()) return null
+        if (s.isEmpty()) {
+            return null
+        }
         return try {
             TagCategory.valueOf(s)
         } catch (_: IllegalArgumentException) {
@@ -118,10 +126,13 @@ class TasteProfileService(
             .lowercase()
 
     private fun normalize(m: Map<String, Double>, topN: Int): Map<String, Double> {
-        if (m.isEmpty()) return emptyMap()
+        if (m.isEmpty()) {
+            return emptyMap()
+        }
         val maxVal = m.values.fold(0.0) { acc, v -> max(acc, v) }
-        if (maxVal <= 0.0) return emptyMap()
-
+        if (maxVal <= 0.0) {
+            return emptyMap()
+        }
         return m.entries
             .sortedByDescending { it.value }
             .take(topN)

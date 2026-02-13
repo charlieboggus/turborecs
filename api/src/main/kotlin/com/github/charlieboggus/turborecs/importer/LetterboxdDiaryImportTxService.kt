@@ -39,9 +39,7 @@ class LetterboxdDiaryImportTxService(
         if (existing != null) {
             return null
         }
-
         val now = Instant.now()
-
         val savedMedia = mediaItemRepository.save(
             MediaItemEntity(
                 id = null,
@@ -57,7 +55,6 @@ class LetterboxdDiaryImportTxService(
                 updatedAt = now
             )
         )
-
         watchHistoryRepository.save(
             WatchHistoryEntity(
                 id = null,
@@ -69,7 +66,6 @@ class LetterboxdDiaryImportTxService(
                 createdAt = now
             )
         )
-
         return requireNotNull(savedMedia.id)
     }
 }

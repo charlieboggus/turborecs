@@ -39,7 +39,9 @@ class LetterboxdDiaryImportRunner(
     private val log = LoggerFactory.getLogger(javaClass)
 
     override fun run(args: ApplicationArguments) {
-        if (!props.enabled) return
+        if (!props.enabled) {
+            return
+        }
         val resource = props.path
         require(resource.exists()) { "Diary CSV not found at: ${describe(resource)}" }
         require(resource.isReadable) { "Diary CSV not readable at: ${describe(resource)}" }
@@ -75,9 +77,10 @@ class LetterboxdDiaryImportRunner(
             val records = format.parse(reader)
             var rowNum = 0
             for (r in records) {
-                if (rowNum >= limit) break
+                if (rowNum >= limit) {
+                    break
+                }
                 rowNum++
-
                 val title = r.get("Name")?.trim().orEmpty()
                 val year = r.get("Year")?.trim()?.toIntOrNull()
                 val watchedRaw = r.get("Watched Date")?.trim()
@@ -91,7 +94,6 @@ class LetterboxdDiaryImportRunner(
                     )
                     continue
                 }
-
                 try {
                     val tmdbId = tmdbLookupService.resolveMovieTmdbId(title, year)
                     if (tmdbId.isNullOrBlank()) {
@@ -120,7 +122,8 @@ class LetterboxdDiaryImportRunner(
                         try {
                             enrichmentService.enrichItem(mediaId)
                             res.enriched++
-                        } catch (e: Exception) {
+                        }
+                        catch (e: Exception) {
                             res.errors++
                             log.warn("Enrichment failed for row {} mediaId={} title='{}': {}", rowNum, mediaId, title, e.message)
                         }
@@ -129,12 +132,14 @@ class LetterboxdDiaryImportRunner(
                         try {
                             taggingService.tagItem(mediaId)
                             res.tagged++
-                        } catch (e: Exception) {
+                        }
+                        catch (e: Exception) {
                             res.errors++
                             log.warn("Tagging failed for row {} mediaId={} title='{}': {}", rowNum, mediaId, title, e.message)
                         }
                     }
-                } catch (e: Exception) {
+                }
+                catch (e: Exception) {
                     res.errors++
                     log.warn(
                         "Failed importing row {} (title='{}', year={}): {}",
@@ -161,7 +166,9 @@ class LetterboxdDiaryImportRunner(
         DateTimeFormatter.ofPattern("M/d/uuuu", Locale.US)
 
     private fun parseWatchedDate(raw: String?): LocalDate? {
-        if (raw.isNullOrBlank()) return null
+        if (raw.isNullOrBlank()) {
+            return null
+        }
         val s = raw.trim()
         return runCatching { LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE) }.getOrNull()
             ?: runCatching { LocalDate.parse(s, letterboxdMdyyyy) }.getOrNull()
@@ -173,9 +180,13 @@ class LetterboxdDiaryImportRunner(
      * map by ceiling (4.5 -> 5) and clamp.
      */
     private fun parseLetterboxdRatingToInt(raw: String?): Int? {
-        if (raw.isNullOrBlank()) return null
+        if (raw.isNullOrBlank()) {
+            return null
+        }
         val d = raw.toDoubleOrNull() ?: return null
-        if (d <= 0.0) return null
+        if (d <= 0.0) {
+            return null
+        }
         return ceil(d).toInt().coerceIn(1, 5)
     }
 

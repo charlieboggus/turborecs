@@ -19,12 +19,8 @@ class MediaLoggedListener(
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     fun onMediaLogged(event: MediaLoggedEvent) {
         val id = event.mediaId
-
-        // Optional: enrichment first (to improve tagging quality)
         runCatching { enrichmentService.enrichItem(id) }
             .onFailure { log.warn("Enrichment failed for {}: {}", id, it.message) }
-
-        // Required: tagging
         runCatching { taggingService.tagItem(id) }
             .onFailure { log.warn("Tagging failed for {}: {}", id, it.message) }
     }

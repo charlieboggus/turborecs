@@ -76,7 +76,6 @@ class ClaudeApiService(
             system = systemPrompt,
             messages = listOf(ClaudeMessage(role = "user", content = userMessage))
         )
-
         val entity: ResponseEntity<String>
         val elapsedMs = measureTimeMillis {
             entity = claudeRestClient.post()
@@ -85,7 +84,6 @@ class ClaudeApiService(
                 .retrieve()
                 .toEntity(String::class.java)
         }
-
         val status = entity.statusCode.value()
         val body = entity.body
 
@@ -99,14 +97,12 @@ class ClaudeApiService(
                     )
                     "Claude API error"
                 }
-
             throw ClaudeApiException(
                 message = "$msg (HTTP $status)",
                 statusCode = status,
                 responseBody = body
             )
         }
-
         if (body.isNullOrBlank()) {
             throw ClaudeApiException(
                 message = "Claude API returned empty response body",
@@ -114,21 +110,18 @@ class ClaudeApiService(
                 responseBody = body
             )
         }
-
         val parsed = safeParse<ClaudeMessageResponse>(body, "ClaudeMessageResponse")
             ?: throw ClaudeApiException(
                 message = "Claude API response JSON could not be parsed",
                 statusCode = status,
                 responseBody = body
             )
-
         val text = parsed.content
             .asSequence()
             .filter { it.type == "text" }
             .mapNotNull { it.text }
             .joinToString("\n")
             .trim()
-
         if (text.isBlank()) {
             throw ClaudeApiException(
                 message = "No text content in Claude response",
@@ -136,7 +129,6 @@ class ClaudeApiService(
                 responseBody = body
             )
         }
-
         log.info(
             "Claude call ok - model={}, elapsedMs={}, inputTokens={}, outputTokens={}",
             parsed.model ?: props.model,
@@ -151,7 +143,8 @@ class ClaudeApiService(
     private inline fun <reified T> safeParse(json: String, label: String): T? =
         try {
             objectMapper.readValue(json, T::class.java)
-        } catch (e: Exception) {
+        }
+        catch (e: Exception) {
             log.warn(
                 "Claude JSON parse failed for {}: {}. bodyPreview='{}'",
                 label,
