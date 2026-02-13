@@ -24,4 +24,6 @@ interface WatchHistoryRepository : JpaRepository<WatchHistoryEntity, UUID> {
             )
     """)
     fun findLatestForMediaIds(@Param("mediaIds") mediaIds: List<UUID>): List<WatchHistoryEntity>
+
+    fun findAllByMedia_IdOrderByCreatedAtDesc(mediaId: UUID): List<WatchHistoryEntity>
 }

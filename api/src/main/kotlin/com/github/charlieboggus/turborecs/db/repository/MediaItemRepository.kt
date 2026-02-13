@@ -30,4 +30,11 @@ interface MediaItemRepository : JpaRepository<MediaItemEntity, UUID> {
 
     @Query("select distinct m.title from MediaItemEntity m where m.mediaType = :type and m.title is not null")
     fun findAllTitlesByMediaType(@Param("type") type: MediaType): List<String>
+
+    fun findByTitleContainingIgnoreCase(title: String, pageable: Pageable): Page<MediaItemEntity>
+
+    fun countByMediaType(mediaType: MediaType): Long
+
+    @Query("select m.id from MediaItemEntity m where m.id is not null")
+    fun findAllIds(): List<UUID>
 }

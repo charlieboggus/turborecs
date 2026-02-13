@@ -15,6 +15,9 @@ import com.github.charlieboggus.turborecs.db.repository.WatchHistoryRepository
 import com.github.charlieboggus.turborecs.service.enums.MediaSort
 import com.github.charlieboggus.turborecs.service.events.MediaLoggedEvent
 import com.github.charlieboggus.turborecs.web.dto.BookMetadataDto
+import com.github.charlieboggus.turborecs.web.dto.BulkNotesRequest
+import com.github.charlieboggus.turborecs.web.dto.BulkRatingRequest
+import com.github.charlieboggus.turborecs.web.dto.BulkStatusRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateBookRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateMovieRequest
 import com.github.charlieboggus.turborecs.web.dto.MediaItemDetailResponse
@@ -27,6 +30,8 @@ import org.springframework.transaction.annotation.Transactional
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import com.github.charlieboggus.turborecs.web.dto.PageResponse
+import com.github.charlieboggus.turborecs.web.dto.UpdateMediaItemRequest
+import com.github.charlieboggus.turborecs.web.dto.WatchHistoryDto
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -379,5 +384,89 @@ class MediaItemService(
             throw NoSuchElementException("Media item not found: $mediaId")
         }
         mediaItemRepository.deleteById(mediaId)
+    }
+
+    @Transactional(readOnly = true)
+    fun searchByTitlePaged(query: String, page: Int, size: Int): PageResponse<MediaItemResponse> {
+        val q = query.trim()
+        if (q.isEmpty()) return PageResponse(emptyList(), page, size, 0, 0)
+
+        val pageable = PageRequest.of(page, size)
+        val result = mediaItemRepository.findByTitleContainingIgnoreCase(q, pageable)
+
+        val items = result.content
+        if (items.isEmpty()) {
+            return PageResponse(emptyList(), page, size, result.totalElements, result.totalPages)
+        }
+
+        val mediaIds = items.mapNotNull { it.id }
+        val latestByMediaId = watchHistoryRepository
+            .findLatestForMediaIds(mediaIds)
+            .associateBy { requireNotNull(it.media.id) }
+
+        val dtos = items.map { it.toResponse(latestByMediaId[it.id]) }
+
+        return PageResponse(
+            items = dtos,
+            page = result.number,
+            size = result.size,
+            totalItems = result.totalElements,
+            totalPages = result.totalPages
+        )
+    }
+
+    @Transactional(readOnly = true)
+    fun getHistory(mediaId: UUID): List<WatchHistoryDto> {
+        if (!mediaItemRepository.existsById(mediaId)) {
+            throw NoSuchElementException("Media item not found: $mediaId")
+        }
+        return watchHistoryRepository.findAllByMedia_IdOrderByCreatedAtDesc(mediaId)
+            .map {
+                WatchHistoryDto(
+                    id = requireNotNull(it.id),
+                    watchedAt = it.watchedAt,
+                    rating = it.rating,
+                    status = it.status,
+                    notes = it.notes,
+                    createdAt = it.createdAt
+                )
+            }
+    }
+
+    @Transactional
+    fun updateMediaItemCoreFields(id: UUID, req: UpdateMediaItemRequest): MediaItemResponse {
+        val item = mediaItemRepository.findById(id).orElseThrow { NoSuchElementException("Media item not found: $id") }
+
+        // apply only provided fields
+        req.title?.let {
+            val t = it.trim()
+            require(t.isNotBlank()) { "title must not be blank" }
+            item.title = t
+        }
+        req.year?.let { item.year = it }
+        req.creator?.let { item.creator = it.trim().ifBlank { null } }
+        req.description?.let { item.description = it }
+        req.posterUrl?.let { item.posterUrl = it.trim().ifBlank { null } }
+
+        item.updatedAt = Instant.now()
+        mediaItemRepository.save(item)
+
+        val latest = watchHistoryRepository.findFirstByMedia_IdOrderByCreatedAtDesc(id)
+        return item.toResponse(latest)
+    }
+
+    @Transactional
+    fun bulkUpdateStatus(req: BulkStatusRequest) {
+        req.ids.forEach { id -> updateStatus(id, req.status) }
+    }
+
+    @Transactional
+    fun bulkUpdateRating(req: BulkRatingRequest) {
+        req.ids.forEach { id -> rateItem(id, req.rating) }
+    }
+
+    @Transactional
+    fun bulkUpdateNotes(req: BulkNotesRequest) {
+        req.ids.forEach { id -> updateNotes(id, req.notes) }
     }
 }
