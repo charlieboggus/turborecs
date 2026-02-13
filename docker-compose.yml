@@ -5,8 +5,8 @@ services:
       - ./.env
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    networks: [internal]
+    # no ports:
 
   api:
     build:
@@ -15,18 +15,23 @@ services:
       - ./.env
     depends_on:
       - db
-    ports:
-      - "8080:8080"
+    networks: [internal]
+    # no ports:
 
   web:
     build:
       context: ./web
-    environment:
-      API_INTERNAL_URL: http://api:8080
     depends_on:
       - api
+    networks: [internal]
+    environment:
+      API_INTERNAL_URL: http://api:8080
     ports:
       - "3000:3000"
 
 volumes:
   pgdata:
+
+networks:
+  internal:
+    driver: bridge

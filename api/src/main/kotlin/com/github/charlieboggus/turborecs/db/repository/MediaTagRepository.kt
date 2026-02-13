@@ -9,7 +9,7 @@ import java.util.UUID
 
 interface MediaTagRepository : JpaRepository<MediaTagEntity, UUID> {
 
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Modifying
     @Query(
         """
     delete from MediaTagEntity mt
@@ -55,34 +55,32 @@ interface MediaTagRepository : JpaRepository<MediaTagEntity, UUID> {
      */
     @Query(
         value = """
-        with latest_rated as (
-            select distinct on (wh.media_id)
-                   wh.media_id,
-                   wh.rating,
-                   wh.created_at
-            from watch_history wh
-            where wh.rating is not null
-            order by wh.media_id, wh.created_at desc
-        )
-        select
-            lr.media_id        as mediaId,
-            mi.title           as title,
-            lr.rating          as rating,
-            t.category         as category,
-            t.name             as tagName,
-            mt.weight          as tagWeight
-        from latest_rated lr
-        join media_items mi
-          on mi.id = lr.media_id
-        join media_tags mt
-          on mt.media_id = lr.media_id
-         and mt.model_version = :modelVersion
-        join tags t
-          on t.id = mt.tag_id
-        """,
+    with latest_rated as (
+        select distinct on (wh.media_id)
+               wh.media_id,
+               wh.rating,
+               wh.created_at
+        from watch_history wh
+        where wh.rating is not null
+        order by wh.media_id, wh.created_at desc
+    )
+    select
+        lr.media_id              as mediaId,
+        mi.title                 as title,
+        lr.rating                as rating,
+        (t.category)::text       as category,
+        (t.name)::text           as tagName,
+        mt.weight                as tagWeight
+    from latest_rated lr
+    join media_items mi
+      on mi.id = lr.media_id
+    join media_tags mt
+      on mt.media_id = lr.media_id
+     and mt.model_version = :modelVersion
+    join tags t
+      on t.id = mt.tag_id
+    """,
         nativeQuery = true
     )
-    fun fetchTasteRows(
-        @Param("modelVersion") modelVersion: String
-    ): List<TasteRow>
+    fun fetchTasteRows(@Param("modelVersion") modelVersion: String): List<TasteRow>
 }

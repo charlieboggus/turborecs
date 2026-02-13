@@ -1,6 +1,7 @@
 package com.github.charlieboggus.turborecs.web.controller
 
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
+import com.github.charlieboggus.turborecs.service.TaggingBatchService
 import com.github.charlieboggus.turborecs.service.TaggingService
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -14,16 +15,12 @@ import java.util.UUID
 
 @Validated
 @RestController
-@RequestMapping("/api/admin/tagging")
+@RequestMapping("/api/tagging")
 class TaggingController(
     private val taggingService: TaggingService,
+    private val taggingBatchService: TaggingBatchService,
     private val claudeProperties: ClaudeProperties
 ) {
-
-    /**
-     * Force tagging (or re-tagging) of a single item.
-     * Useful after enrichment, prompt changes, or fixing broken tag rows.
-     */
     @PostMapping("/{mediaId}")
     fun tagOne(
         @PathVariable mediaId: UUID,
@@ -32,9 +29,6 @@ class TaggingController(
         taggingService.tagItem(mediaId, modelVersion ?: claudeProperties.model)
     }
 
-    /**
-     * Tag media items that have NO tags for the given modelVersion.
-     */
     @PostMapping("/batch")
     fun tagBatch(
         @RequestParam(required = false, defaultValue = "200")
@@ -42,6 +36,9 @@ class TaggingController(
         limit: Int,
         @RequestParam(required = false) modelVersion: String?
     ): List<UUID> {
-        return taggingService.tagAllUntagged(limit = limit, modelVersion = modelVersion ?: claudeProperties.model)
+        return taggingBatchService.tagAllUntagged(
+            limit = limit,
+            modelVersion = modelVersion ?: claudeProperties.model
+        )
     }
 }

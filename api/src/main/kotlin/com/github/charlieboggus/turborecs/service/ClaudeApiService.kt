@@ -1,5 +1,6 @@
 package com.github.charlieboggus.turborecs.service
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
@@ -7,8 +8,58 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
-import java.time.Duration
 import kotlin.system.measureTimeMillis
+
+data class ClaudeMessageRequest(
+    val model: String,
+    @JsonProperty("max_tokens")
+    val maxTokens: Int,
+    val system: String,
+    val messages: List<ClaudeMessage>
+)
+
+data class ClaudeMessage(
+    val role: String,
+    val content: String
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class ClaudeMessageResponse(
+    val model: String? = null,
+    val content: List<ClaudeContentBlock> = emptyList(),
+    val usage: ClaudeUsage? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class ClaudeContentBlock(
+    val type: String? = null,
+    val text: String? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class ClaudeUsage(
+    @JsonProperty("input_tokens")
+    val inputTokens: Int? = null,
+    @JsonProperty("output_tokens")
+    val outputTokens: Int? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class ClaudeErrorResponse(
+    val error: ClaudeError? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class ClaudeError(
+    val type: String? = null,
+    val message: String? = null
+)
+
+class ClaudeApiException(
+    message: String,
+    val statusCode: Int?,
+    val responseBody: String?
+) : RuntimeException(message)
 
 @Service
 class ClaudeApiService(
@@ -26,7 +77,7 @@ class ClaudeApiService(
             messages = listOf(ClaudeMessage(role = "user", content = userMessage))
         )
 
-        var entity: ResponseEntity<String>? = null
+        val entity: ResponseEntity<String>
         val elapsedMs = measureTimeMillis {
             entity = claudeRestClient.post()
                 .uri("/v1/messages")
@@ -35,12 +86,20 @@ class ClaudeApiService(
                 .toEntity(String::class.java)
         }
 
-        val status = requireNotNull(entity).statusCode.value()
-        val body = entity!!.body
+        val status = entity.statusCode.value()
+        val body = entity.body
 
         if (status !in 200..299) {
-            val parsedErr = body?.let { safeParse<ClaudeErrorResponse>(it) }
-            val msg = parsedErr?.error?.message ?: "Claude API error"
+            val parsedErr = body?.let { safeParse<ClaudeErrorResponse>(it, "ClaudeErrorResponse") }
+            val msg = parsedErr?.error?.message
+                ?: run {
+                    log.warn("Claude non-2xx with unparseable error body. status={} bodyPreview='{}'",
+                        status,
+                        body?.take(500)?.replace("\n", "\\n")
+                    )
+                    "Claude API error"
+                }
+
             throw ClaudeApiException(
                 message = "$msg (HTTP $status)",
                 statusCode = status,
@@ -56,7 +115,7 @@ class ClaudeApiService(
             )
         }
 
-        val parsed = safeParse<ClaudeMessageResponse>(body)
+        val parsed = safeParse<ClaudeMessageResponse>(body, "ClaudeMessageResponse")
             ?: throw ClaudeApiException(
                 message = "Claude API response JSON could not be parsed",
                 statusCode = status,
@@ -89,60 +148,16 @@ class ClaudeApiService(
         return text
     }
 
-    private inline fun <reified T> safeParse(json: String): T? =
-        runCatching { objectMapper.readValue(json, T::class.java) }.getOrNull()
+    private inline fun <reified T> safeParse(json: String, label: String): T? =
+        try {
+            objectMapper.readValue(json, T::class.java)
+        } catch (e: Exception) {
+            log.warn(
+                "Claude JSON parse failed for {}: {}. bodyPreview='{}'",
+                label,
+                e.message,
+                json.take(500).replace("\n", "\\n")
+            )
+            null
+        }
 }
-
-/** ===== Request models ===== */
-
-data class ClaudeMessageRequest(
-    val model: String,
-    @JsonProperty("max_tokens")
-    val maxTokens: Int,
-    val system: String,
-    val messages: List<ClaudeMessage>
-)
-
-data class ClaudeMessage(
-    val role: String,
-    val content: String
-)
-
-/** ===== Success response models ===== */
-
-data class ClaudeMessageResponse(
-    val model: String? = null,
-    val content: List<ClaudeContentBlock> = emptyList(),
-    val usage: ClaudeUsage? = null
-)
-
-data class ClaudeContentBlock(
-    val type: String? = null,
-    val text: String? = null
-)
-
-data class ClaudeUsage(
-    @JsonProperty("input_tokens")
-    val inputTokens: Int? = null,
-    @JsonProperty("output_tokens")
-    val outputTokens: Int? = null
-)
-
-/** ===== Error response models ===== */
-
-data class ClaudeErrorResponse(
-    val error: ClaudeError? = null
-)
-
-data class ClaudeError(
-    val type: String? = null,
-    val message: String? = null
-)
-
-/** ===== Exception type ===== */
-
-class ClaudeApiException(
-    message: String,
-    val statusCode: Int?,
-    val responseBody: String?
-) : RuntimeException(message)
