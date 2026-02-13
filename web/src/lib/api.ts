@@ -1,102 +1,112 @@
-import type {
-    MediaItem,
-    MediaType,
-    MediaStatus,
-    Recommendation,
-    TasteProfile,
-} from "./types"
+function isServer() {
+    return typeof window === "undefined"
+}
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api"
+function apiBase(): string {
+    const base = process.env.API_INTERNAL_URL
+    if (!base) throw new Error("Missing API_INTERNAL_URL in environment")
+    return base.replace(/\/+$/, "")
+}
 
-async function fetchApi<T>(
-    endpoint: string,
-    options?: RequestInit,
-): Promise<T> {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-        headers: { "Content-Type": "application/json" },
-        ...options,
-    })
+function buildUrl(path: string): string {
+    if (!path.startsWith("/"))
+        throw new Error(`api path must start with '/': ${path}`)
 
-    if (!res.ok) {
-        const error = await res
-            .json()
-            .catch(() => ({ message: "Request failed" }))
-        throw new Error(error.message || `HTTP ${res.status}`)
+    if (!isServer()) return `/api/proxy${path}`
+
+    return `${apiBase()}${path}`
+}
+
+async function check(res: Response, method: string, path: string) {
+    if (res.ok) return
+    const text = await res.text().catch(() => "")
+    throw new Error(`${method} ${path} failed: ${res.status} ${text}`)
+}
+
+function mustEnv(name: string, value: string | undefined): string {
+    if (!value) throw new Error(`Missing env var: ${name}`)
+    return value
+}
+
+function buildAuthHeaders(
+    includeContentType: boolean,
+): HeadersInit | undefined {
+    if (!isServer()) {
+        // Browser never needs tokens; proxy route adds them server-side.
+        return includeContentType
+            ? { "content-type": "application/json" }
+            : undefined
     }
 
+    // Server-side only:
+    const h = new Headers()
+    if (includeContentType) h.set("content-type", "application/json")
+
+    const internal = process.env.INTERNAL_AUTH_TOKEN
+    const admin = process.env.ADMIN_AUTH_TOKEN
+
+    if (internal) h.set("X-Internal-Auth", internal)
+    if (admin) h.set("X-Admin-Auth", admin)
+
+    return h
+}
+
+export async function apiGet<T>(path: string): Promise<T> {
+    const url = buildUrl(path)
+    const res = await fetch(url, {
+        cache: "no-store",
+        headers: buildAuthHeaders(false), // no content-type on GET
+    })
+    await check(res, "GET", path)
+    return (await res.json()) as T
+}
+
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+    const url = buildUrl(path)
+    const res = await fetch(url, {
+        method: "POST",
+        headers: buildAuthHeaders(true),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+    })
+    await check(res, "POST", path)
+    return (await res.json()) as T
+}
+
+export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+    const url = buildUrl(path)
+    const res = await fetch(url, {
+        method: "PATCH",
+        headers: buildAuthHeaders(true),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+    })
+    await check(res, "PATCH", path)
+
     if (res.status === 204) return undefined as T
-    return res.json()
+    return (await res.json()) as T
 }
 
-// Media CRUD
-export const mediaApi = {
-    getAll: (params?: {
-        type?: MediaType
-        status?: MediaStatus
-        sortBy?: string
-    }) => {
-        const query = new URLSearchParams()
-        if (params?.type) query.set("type", params.type)
-        if (params?.status) query.set("status", params.status)
-        if (params?.sortBy) query.set("sortBy", params.sortBy)
-        const qs = query.toString()
-        return fetchApi<MediaItem[]>(`/media${qs ? `?${qs}` : ""}`)
-    },
-
-    getById: (id: string) => fetchApi<MediaItem>(`/media/${id}`),
-
-    create: (title: string, type: MediaType) =>
-        fetchApi<MediaItem>("/media", {
-            method: "POST",
-            body: JSON.stringify({ title, type }),
-        }),
-
-    updateStatus: (id: string, status: MediaStatus) =>
-        fetchApi<MediaItem>(`/media/${id}/status`, {
-            method: "PATCH",
-            body: JSON.stringify({ status }),
-        }),
-
-    updateRating: (id: string, rating: number) =>
-        fetchApi<MediaItem>(`/media/${id}/rating`, {
-            method: "PATCH",
-            body: JSON.stringify({ rating }),
-        }),
-
-    updateNotes: (id: string, notes: string | null) =>
-        fetchApi<MediaItem>(`/media/${id}/notes`, {
-            method: "PATCH",
-            body: JSON.stringify({ notes }),
-        }),
-
-    delete: (id: string) =>
-        fetchApi<void>(`/media/${id}`, { method: "DELETE" }),
-
-    search: (query: string) =>
-        fetchApi<MediaItem[]>(
-            `/media/search?query=${encodeURIComponent(query)}`,
-        ),
+export async function apiDelete(path: string): Promise<void> {
+    const url = buildUrl(path)
+    const res = await fetch(url, {
+        method: "DELETE",
+        cache: "no-store",
+        headers: buildAuthHeaders(false),
+    })
+    await check(res, "DELETE", path)
 }
 
-// Recommendations
-export const recommendationsApi = {
-    get: (params?: { count?: number; type?: MediaType }) => {
-        const query = new URLSearchParams()
-        if (params?.count) query.set("count", String(params.count))
-        if (params?.type) query.set("type", params.type)
-        const qs = query.toString()
-        return fetchApi<Recommendation[]>(
-            `/recommendations${qs ? `?${qs}` : ""}`,
-        )
-    },
-
-    pick: (type?: MediaType) => {
-        const qs = type ? `?type=${type}` : ""
-        return fetchApi<Recommendation>(`/recommendations/pick${qs}`)
-    },
-
-    profile: (type?: MediaType) => {
-        const qs = type ? `?type=${type}` : ""
-        return fetchApi<TasteProfile>(`/recommendations/profile${qs}`)
-    },
+export async function apiPatchNoContent(
+    path: string,
+    body?: unknown,
+): Promise<void> {
+    const url = buildUrl(path)
+    const res = await fetch(url, {
+        method: "PATCH",
+        headers: buildAuthHeaders(true),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+    })
+    await check(res, "PATCH", path)
 }
