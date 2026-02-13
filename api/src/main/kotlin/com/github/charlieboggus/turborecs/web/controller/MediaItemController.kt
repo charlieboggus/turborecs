@@ -8,6 +8,7 @@ import com.github.charlieboggus.turborecs.web.dto.CreateBookRequest
 import com.github.charlieboggus.turborecs.web.dto.CreateMovieRequest
 import com.github.charlieboggus.turborecs.web.dto.MediaItemDetailResponse
 import com.github.charlieboggus.turborecs.web.dto.MediaItemResponse
+import com.github.charlieboggus.turborecs.web.dto.PageResponse
 import com.github.charlieboggus.turborecs.web.dto.RateItemRequest
 import com.github.charlieboggus.turborecs.web.dto.UpdateNotesRequest
 import com.github.charlieboggus.turborecs.web.dto.UpdateStatusRequest
@@ -26,9 +27,10 @@ class MediaItemController(
     fun getAll(
         @RequestParam type: MediaType? = null,
         @RequestParam status: MediaStatus? = null,
-        @RequestParam sortBy: MediaSort? = null
-    ): List<MediaItemResponse> =
-        service.getAllItems(type = type, status = status, sortBy = sortBy)
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "50") size: Int
+    ): PageResponse<MediaItemResponse> =
+        service.getAllItemsPaged(type = type, status = status, page = page, size = size)
 
     @GetMapping("/{id}")
     fun getById(

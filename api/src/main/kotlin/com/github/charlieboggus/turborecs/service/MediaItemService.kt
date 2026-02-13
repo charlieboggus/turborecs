@@ -24,6 +24,9 @@ import com.github.charlieboggus.turborecs.web.dto.TagWeightDto
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
+import com.github.charlieboggus.turborecs.web.dto.PageResponse
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -88,6 +91,48 @@ class MediaItemService(
             else -> filtered
         }
         return sorted.map { (item, latest) -> item.toResponse(latest) }
+    }
+
+    @Transactional(readOnly = true)
+    fun getAllItemsPaged(
+        type: MediaType? = null,
+        status: MediaStatus? = null,
+        page: Int = 0,
+        size: Int = 50
+    ): PageResponse<MediaItemResponse> {
+        require(page >= 0) { "page must be >= 0" }
+        require(size in 1..100) { "size must be between 1 and 100" }
+        val pageable = PageRequest.of(page, size, Sort.by("createdAt").descending())
+        val itemPage = if (type == null) {
+            mediaItemRepository.findAll(pageable)
+        } else {
+            mediaItemRepository.findAllByMediaType(type, pageable)
+        }
+        val items = itemPage.content
+        if (items.isEmpty()) {
+            return PageResponse(
+                items = emptyList(),
+                page = page,
+                size = size,
+                totalItems = itemPage.totalElements,
+                totalPages = itemPage.totalPages
+            )
+        }
+        val ids = items.mapNotNull { it.id }
+        val latestByMediaId = watchHistoryRepository
+            .findLatestForMediaIds(ids)
+            .associateBy { requireNotNull(it.media.id) }
+        val pairs = items
+            .map { it to latestByMediaId[it.id] }
+            .let { p -> if (status == null) p else p.filter { (_, latest) -> latest?.status == status } }
+        val responses = pairs.map { (item, latest) -> item.toResponse(latest) }
+        return PageResponse(
+            items = responses,
+            page = page,
+            size = size,
+            totalItems = itemPage.totalElements,
+            totalPages = itemPage.totalPages
+        )
     }
 
     @Transactional(readOnly = true)
@@ -165,14 +210,11 @@ class MediaItemService(
 
     @Transactional
     fun createMovie(req: CreateMovieRequest): MediaItemResponse {
-
         require(req.tmdbId.isNotBlank()) { "tmdbId must not be blank" }
         require(req.title.isNotBlank()) { "title must not be blank" }
-
         mediaItemRepository.findByTmdbId(req.tmdbId)?.let {
             throw IllegalArgumentException("MOVIE with tmdbId='${req.tmdbId}' already exists (id=${it.id})")
         }
-
         val saved = mediaItemRepository.save(
             MediaItemEntity(
                 id = null, // DB generates
@@ -206,14 +248,11 @@ class MediaItemService(
 
     @Transactional
     fun createBook(req: CreateBookRequest): MediaItemResponse {
-
         require(req.openLibraryId.isNotBlank()) { "openLibraryId must not be blank" }
         require(req.title.isNotBlank()) { "title must not be blank" }
-
         mediaItemRepository.findByOpenLibraryId(req.openLibraryId)?.let {
             throw IllegalArgumentException("BOOK with openLibraryId='${req.openLibraryId}' already exists (id=${it.id})")
         }
-
         val saved = mediaItemRepository.save(
             MediaItemEntity(
                 id = null, // DB generates
@@ -257,7 +296,6 @@ class MediaItemService(
         val watchedAt =
             if (isCompletedStatus(status)) LocalDate.now()
             else latest?.watchedAt ?: LocalDate.now()
-
         watchHistoryRepository.save(
             WatchHistoryEntity(
                 id = null,
@@ -269,16 +307,13 @@ class MediaItemService(
                 createdAt = Instant.now()
             )
         )
-
         item.updatedAt = Instant.now()
         mediaItemRepository.save(item)
     }
 
     @Transactional
     fun rateItem(mediaId: UUID, rating: Int) {
-
         require(rating in 1..5) { "Rating must be between 1 and 5" }
-
         val item = mediaItemRepository
             .findById(mediaId)
             .orElseThrow {
@@ -327,15 +362,12 @@ class MediaItemService(
     fun searchByTitle(query: String): List<MediaItemResponse> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
-
         val items = mediaItemRepository.findAllByTitleContainingIgnoreCase(q)
         if (items.isEmpty()) return emptyList()
-
         val mediaIds = items.mapNotNull { it.id }
         val latestByMediaId = watchHistoryRepository
             .findLatestForMediaIds(mediaIds)
             .associateBy { requireNotNull(it.media.id) }
-
         return items.map { item ->
             item.toResponse(latestByMediaId[item.id])
         }
