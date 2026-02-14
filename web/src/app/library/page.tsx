@@ -16,6 +16,45 @@ type Props = {
     }>
 }
 
+function MetaChip({ label }: { label: string }) {
+    return (
+        <span className="text-[11px] rounded-full border bg-black/5 px-2 py-1 opacity-80">
+            {label}
+        </span>
+    )
+}
+
+function PagerLink(props: {
+    page: number
+    size: number
+    type?: MediaType
+    status?: MediaStatus
+    disabled?: boolean
+    children: React.ReactNode
+}) {
+    const qs = new URLSearchParams()
+    qs.set("page", String(props.page))
+    qs.set("size", String(props.size))
+    if (props.type) qs.set("type", props.type)
+    if (props.status) qs.set("status", props.status)
+
+    if (props.disabled) {
+        return (
+            <span className="px-3 py-2 rounded-lg border opacity-40">
+                {props.children}
+            </span>
+        )
+    }
+    return (
+        <Link
+            href={`/library?${qs.toString()}`}
+            className="px-3 py-2 rounded-lg border hover:bg-black/5"
+        >
+            {props.children}
+        </Link>
+    )
+}
+
 export default async function LibraryPage({ searchParams }: Props) {
     const sp = await searchParams
     const page = Number(sp.page ?? "0")
@@ -136,44 +175,5 @@ export default async function LibraryPage({ searchParams }: Props) {
                 ))}
             </div>
         </div>
-    )
-}
-
-function MetaChip({ label }: { label: string }) {
-    return (
-        <span className="text-[11px] rounded-full border bg-black/5 px-2 py-1 opacity-80">
-            {label}
-        </span>
-    )
-}
-
-function PagerLink(props: {
-    page: number
-    size: number
-    type?: MediaType
-    status?: MediaStatus
-    disabled?: boolean
-    children: React.ReactNode
-}) {
-    const qs = new URLSearchParams()
-    qs.set("page", String(props.page))
-    qs.set("size", String(props.size))
-    if (props.type) qs.set("type", props.type)
-    if (props.status) qs.set("status", props.status)
-
-    if (props.disabled) {
-        return (
-            <span className="px-3 py-2 rounded-lg border opacity-40">
-                {props.children}
-            </span>
-        )
-    }
-    return (
-        <Link
-            href={`/library?${qs.toString()}`}
-            className="px-3 py-2 rounded-lg border hover:bg-black/5"
-        >
-            {props.children}
-        </Link>
     )
 }

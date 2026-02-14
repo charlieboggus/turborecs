@@ -69,13 +69,6 @@ async function forward(
 
     const body = hasBody ? await req.arrayBuffer() : undefined
 
-    console.log(
-        "PROXY",
-        method,
-        req.nextUrl.pathname + req.nextUrl.search,
-        "->",
-        target.toString(),
-    )
     const res = await fetch(target, {
         method,
         headers,
