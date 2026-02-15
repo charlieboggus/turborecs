@@ -7,13 +7,12 @@ import org.springframework.context.annotation.Configuration
 
 @Configuration
 class OpenApiConfig {
-
     @Bean
-    fun customOpenAPI(): OpenAPI =
+    fun openApi(): OpenAPI =
         OpenAPI().info(
             Info()
                 .title("Turborecs API")
                 .version("v1")
-                .description("Turbostack Media recommendation backend")
+                .description("Turborecs media recommendation backend")
         )
 }

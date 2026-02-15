@@ -1,56 +1,18 @@
 package com.github.charlieboggus.turborecs.db.repository
 
-import com.github.charlieboggus.turborecs.db.entity.RecommendationLogEntity
-import com.github.charlieboggus.turborecs.db.entity.enums.RecommendationSelection
+import com.github.charlieboggus.turborecs.db.entities.RecommendationLogEntity
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Query
-import org.springframework.data.repository.query.Param
 import java.time.Instant
 import java.util.UUID
 
 interface RecommendationLogRepository : JpaRepository<RecommendationLogEntity, UUID> {
 
-    @Query(
-        """
-        select distinct r.fingerprint
-        from RecommendationLogEntity r
-        where r.modelVersion = :modelVersion
-          and r.expiresAt > :now
-        """
-    )
-    fun findActiveFingerprints(
-        @Param("modelVersion") modelVersion: String,
-        @Param("now") now: Instant
-    ): List<String>
+    // Load the current batch to display on the recommendations page
+    fun findAllByBatchId(batchId: UUID): List<RecommendationLogEntity>
 
-    @Query(
-        """
-        select r
-        from RecommendationLogEntity r
-        where r.batchId = :batchId
-        order by r.slot asc
-        """
-    )
-    fun findByBatchIdOrderBySlot(@Param("batchId") batchId: UUID): List<RecommendationLogEntity>
+    // Get active (non-expired) recommendations for display
+    fun findAllByModelVersionAndExpiresAtAfter(modelVersion: String, now: Instant): List<RecommendationLogEntity>
 
-    @Query(
-        """
-        select r.batchId
-        from RecommendationLogEntity r
-        where r.modelVersion = :modelVersion
-          and r.selection = :selection
-          and r.shownAt >= :since
-        group by r.batchId
-        order by max(r.shownAt) desc
-        """
-    )
-    fun findRecentBatchIds(
-        @Param("modelVersion") modelVersion: String,
-        @Param("selection") selection: RecommendationSelection,
-        @Param("since") since: Instant
-    ): List<UUID>
-
-    fun findByBatchIdAndReplacedByIsNullOrderBySlot(batchId: UUID): List<RecommendationLogEntity>
-
-    fun findByBatchIdAndSlotAndReplacedByIsNull(batchId: UUID, slot: Int): RecommendationLogEntity?
+    // Dedup: check if a fingerprint was already recommended and is still active
+    fun existsByModelVersionAndFingerprintAndExpiresAtAfter(modelVersion: String, fingerprint: String, now: Instant): Boolean
 }
