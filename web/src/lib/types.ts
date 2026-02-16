@@ -79,3 +79,13 @@ export interface Stats {
   recommendationCount: number
   exclusionCount: number
 }
+
+export interface PaginatedResponse<T> {
+  content: T[]
+  totalElements: number
+  totalPages: number
+  number: number
+  size: number
+  first: boolean
+  last: boolean
+}

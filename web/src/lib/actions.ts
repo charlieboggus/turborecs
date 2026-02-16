@@ -8,8 +8,9 @@ import {
   rateMediaItem,
   refreshRecommendations,
   removeExclusion,
+  searchMedia,
 } from "./api"
-import type { MediaType } from "./types"
+import type { MediaType, SearchResult } from "./types"
 
 export const logMediaAction = async (
   mediaType: MediaType,
@@ -31,6 +32,16 @@ export const rateMediaAction = async (id: string, rating: number) => {
   revalidatePath("/library")
   revalidatePath(`/library/${id}`)
   return result
+}
+
+export const searchAction = async (
+  query: string,
+  type: MediaType,
+): Promise<SearchResult[]> => {
+  if (!query.trim()) {
+    return []
+  }
+  return searchMedia(query.trim(), type)
 }
 
 export const excludeMediaAction = async (

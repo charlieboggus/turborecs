@@ -3,6 +3,7 @@ import type {
   MediaItem,
   MediaSort,
   MediaType,
+  PaginatedResponse,
   RecommendationGrid,
   SearchResult,
   Stats,
@@ -58,6 +59,24 @@ export const getAllMediaItems = async (
   }
   const query = params.toString()
   return apiFetch<MediaItem[]>(`/api/media${query ? `?${query}` : ""}`)
+}
+
+export const getMediaItemsPaginated = async (
+  type?: MediaType,
+  page: number = 0,
+  limit: number = 24,
+  sortBy?: MediaSort,
+): Promise<PaginatedResponse<MediaItem>> => {
+  const params = new URLSearchParams()
+  if (type) {
+    params.set("type", type)
+  }
+  params.set("page", String(page))
+  params.set("limit", String(limit))
+  if (sortBy) {
+    params.set("sortBy", sortBy)
+  }
+  return apiFetch<PaginatedResponse<MediaItem>>(`/api/media?${params}`)
 }
 
 export const getMediaItem = async (id: string): Promise<MediaItem> => {

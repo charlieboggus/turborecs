@@ -1,5 +1,3 @@
-// app/page.tsx
-
 import Link from "next/link"
 import { getStats, getTasteProfile } from "@/lib/api"
 import {
