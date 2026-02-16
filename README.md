@@ -71,6 +71,7 @@ This project is under active development. The core logging and AI tagging featur
    Create a `.env` file in the root directory:
    ```env
    # PostgreSQL
+   DB_JDBC_URL=jdbc:postgresql://db:5432/turborecs
    POSTGRES_DB=turborecs
    POSTGRES_USER=turborecs
    POSTGRES_PASSWORD=your_secure_password
@@ -80,7 +81,7 @@ This project is under active development. The core logging and AI tagging featur
    TMDB_API_KEY=your_tmdb_api_key
    OPEN_LIBRARY_USER_AGENT=your_open_library_user_agent_header
 
-   # Internal Auth (generate random secure tokens)
+   # Internal Auth (generate a random secure token)
    INTERNAL_AUTH_TOKEN=your_internal_token
    ```
 
