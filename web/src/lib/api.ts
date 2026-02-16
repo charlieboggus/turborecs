@@ -130,15 +130,26 @@ export const searchMedia = async (
 
 export const getRecommendations = async (
   mediaType?: MediaType,
-): Promise<RecommendationGrid> => {
+  generate: boolean = true,
+): Promise<RecommendationGrid | null> => {
   const params = new URLSearchParams()
   if (mediaType) {
     params.set("mediaType", mediaType)
   }
+  if (!generate) {
+    params.set("generate", "false")
+  }
   const query = params.toString()
-  return apiFetch<RecommendationGrid>(
-    `/api/recommendations${query ? `${query}` : ""}`,
-  )
+  const res = await fetch(`${API_BASE}/api/recommendations?${params}`, {
+    cache: "no-store",
+  })
+  if (res.status === 204) {
+    return null
+  }
+  if (!res.ok) {
+    throw new Error(`API error ${res.status}`)
+  }
+  return res.json()
 }
 
 export const refreshRecommendations = async (

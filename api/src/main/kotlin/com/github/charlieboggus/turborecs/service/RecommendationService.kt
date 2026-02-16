@@ -101,6 +101,21 @@ class RecommendationService(
         return generateGrid(mediaType)
     }
 
+    fun getCachedGrid(mediaType: MediaType? = null): RecommendationGridResponse? {
+        val active = recommendationLogRepository.findActiveRecommendations(Instant.now())
+        if (active.isEmpty()) {
+            return null
+        }
+        val items = if (mediaType != null) {
+            active.filter { it.mediaType == mediaType }
+        }
+        else {
+            active
+        }
+        val batchId = items.first().batchId
+        return toGridResponse(batchId, items)
+    }
+
     private fun generateGrid(mediaType: MediaType?): RecommendationGridResponse {
         val modelVersion = claudeProperties.model
         val now = Instant.now()

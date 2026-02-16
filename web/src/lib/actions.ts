@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import {
   deleteMediaItem,
   excludeMedia,
+  getRecommendations,
   logMediaItem,
   rateMediaItem,
   refreshRecommendations,
@@ -73,6 +74,14 @@ export const removeExclusionAction = async (id: string) => {
 export const deleteMediaAction = async (id: string) => {
   await deleteMediaItem(id)
   revalidatePath("/library")
+}
+
+export const getRecommendationsAction = async (mediaType?: MediaType) => {
+  return getRecommendations(mediaType, true)
+}
+
+export async function checkCachedRecommendationsAction() {
+  return getRecommendations(undefined, false)
 }
 
 export const refreshRecommendationsAction = async (mediaType?: MediaType) => {

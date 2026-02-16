@@ -32,4 +32,7 @@ interface RecommendationLogRepository : JpaRepository<RecommendationLogEntity, U
         @Param("modelVersion") modelVersion: String,
         @Param("now") now: Instant
     ): List<String>
+
+    @Query("SELECT r FROM RecommendationLogEntity r WHERE r.expiresAt > :now ORDER BY r.shownAt DESC")
+    fun findActiveRecommendations(now: Instant): List<RecommendationLogEntity>
 }
