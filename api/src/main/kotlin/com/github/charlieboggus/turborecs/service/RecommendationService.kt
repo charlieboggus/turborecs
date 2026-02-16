@@ -101,6 +101,7 @@ class RecommendationService(
         return generateGrid(mediaType)
     }
 
+    @Transactional
     fun getCachedGrid(mediaType: MediaType? = null): RecommendationGridResponse? {
         val active = recommendationLogRepository.findActiveRecommendations(Instant.now())
         if (active.isEmpty()) {
