@@ -77,7 +77,11 @@ export const deleteMediaAction = async (id: string) => {
 }
 
 export const getRecommendationsAction = async (mediaType?: MediaType) => {
-  return getRecommendations(mediaType)
+  return getRecommendations(mediaType, true)
+}
+
+export async function checkCachedRecommendationsAction() {
+  return getRecommendations(undefined, false)
 }
 
 export const refreshRecommendationsAction = async (mediaType?: MediaType) => {

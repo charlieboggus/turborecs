@@ -17,6 +17,10 @@ The Turborecs web app is the UI for an AI-powered personal media recommendation 
 | --- | --- |
 | ![Media Details](../docs/screenshots/media-details.png) | ![Search](../docs/screenshots/search.png) |
 
+| Recommendations | Exclusions |
+| --- | --- |
+| ![Recommendations](../docs/screenshots/recommendations.png) | ![Exclusions](../docs/screenshots/exclusions.png) |
+
 ---
 
 ## What you can do

@@ -89,9 +89,7 @@ export default async function MediaDetailPage({
             )}
           </div>
 
-          {/* Details */}
           <div className="flex-1 min-w-0">
-            {/* Type Badge */}
             <Badge variant="outline" className="mb-3 text-xs">
               {isMovie ? (
                 <Film className="h-3 w-3 mr-1" />
@@ -101,17 +99,14 @@ export default async function MediaDetailPage({
               {isMovie ? "Movie" : "Book"}
             </Badge>
 
-            {/* Title */}
             <h1 className="text-3xl font-bold tracking-tight">{item.title}</h1>
 
-            {/* Creator / Year */}
             {(item.creator || item.year) && (
               <p className="mt-1 text-muted-foreground">
                 {[item.creator, item.year].filter(Boolean).join(" · ")}
               </p>
             )}
 
-            {/* Rating */}
             <div className="mt-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
                 Your Rating
@@ -121,7 +116,6 @@ export default async function MediaDetailPage({
 
             <Separator className="my-5" />
 
-            {/* Metadata Grid */}
             <div className="grid grid-cols-2 gap-x-8 gap-y-3">
               {item.genres && item.genres.length > 0 && (
                 <MetadataField
@@ -203,7 +197,6 @@ export default async function MediaDetailPage({
               </MetadataField>
             </div>
 
-            {/* Description */}
             {item.description && (
               <>
                 <Separator className="my-5" />
@@ -218,7 +211,6 @@ export default async function MediaDetailPage({
               </>
             )}
 
-            {/* Tagging Status */}
             {item.taggingStatus && item.taggingStatus !== "TAGGED" && (
               <>
                 <Separator className="my-5" />
@@ -233,7 +225,6 @@ export default async function MediaDetailPage({
               </>
             )}
 
-            {/* Actions */}
             <Separator className="my-5" />
             <DeleteMediaButton mediaId={item.id} title={item.title} />
           </div>
