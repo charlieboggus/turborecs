@@ -2,7 +2,7 @@
 
 The Turborecs web app is the UI for an AI-powered personal media recommendation engine. It lets you build a library of movies/books, rate them, generate a taste profile from those signals, and then browse recommendations tailored to that profile.
 
-> This repo/folder contains the **frontend** only. It expects a running Turborecs API.
+> This folder contains the **frontend** only. It expects a running Turborecs API and DB.
 
 ---
 
