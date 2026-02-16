@@ -16,8 +16,10 @@ data class OpenLibraryEdition(
     val covers: List<Int>? = null
 ) {
     val isbn: String? get() = isbn13?.firstOrNull() ?: isbn10?.firstOrNull()
+
     val publisher: String? get() = publishers?.firstOrNull()
-    val isEnglish: Boolean get() = languages?.any { it.key == "/languages/eng" } != false
+
+    val isEnglish: Boolean get() = languages?.any { it.key == "/languages/eng" } == true
 
     val posterUrl: String? get() = covers
         ?.firstOrNull { it > 0 }

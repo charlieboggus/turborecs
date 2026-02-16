@@ -117,7 +117,10 @@ class MediaItemService(
         val bestEdition = editions.entries
             .filter { it.isEnglish }
             .maxByOrNull { (if (it.isbn != null) 1 else 0) + (if (it.numberOfPages != null) 1 else 0) }
-        val enriched = EnrichedBookData.from(work, bestEdition, null)
+        val searchResult = openLibraryClient.searchBooks(work.title)
+            .docs
+            .firstOrNull { it.openLibraryId == work.openLibraryId }
+        val enriched = EnrichedBookData.from(work, bestEdition, searchResult)
         val item = MediaItemEntity(
             mediaType = MediaType.BOOK,
             title = enriched.title,
