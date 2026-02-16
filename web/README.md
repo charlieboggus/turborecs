@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Turborecs — Web (Frontend)
 
-## Getting Started
+The Turborecs web app is the UI for an AI-powered personal media recommendation engine. It lets you build a library of movies/books, rate them, generate a taste profile from those signals, and then browse recommendations tailored to that profile.
 
-First, run the development server:
+> This repo/folder contains the **frontend** only. It expects a running Turborecs API.
 
+---
+
+## Screenshots
+
+
+| Home / Taste Profile | Library |
+| --- | --- |
+| ![Home](../docs/screenshots/home.png) | ![Library](../docs/screenshots/library.png) |
+
+| Media Details | Search |
+| --- | --- |
+| ![Media Details](../docs/screenshots/media-details.png) | ![Search](../docs/screenshots/search.png) |
+
+---
+
+## What you can do
+
+### Dashboard
+- See quick stats (Movies, Books, Tags, Recommended)
+- Jump into core flows: **Library**, **Search**, **Recommendations**, **Exclusions**
+- Inspect your **Taste Profile** (themes/moods/tones/settings) built from ratings + AI-generated tags
+
+### Library
+- Browse your logged items in a cover-first grid
+- Filter between **All / Movies / Books**
+- Sort by **Recent / Rating / Title**
+- Open any item for details + management
+
+### Media Details
+- View basic metadata (title, creator/director, year, runtime)
+- See and set **your rating**
+- View genre tags + description
+- Delete the item from your library (and remove its influence on your profile)
+
+### Search
+- Search for **Movies** or **Books**
+- Add a result to your library
+- Exclude a title so it never appears in recommendations
+
+### Recommendations
+- Generate movie and book recommendations based on your stored taste profile
+- Recommendations are saved for 30 days or you can regenerate new ones at will
+
+---
+
+## Tech stack
+
+- React UI (Next.js-style routing + server/client components and server actions)
+- TypeScript
+- Utility-first styling (Tailwind or equivalent)
+- Turborecs API integration (internal service URL for Docker, public URL for local dev)
+
+---
+
+## Getting started
+
+### Prerequisites
+- Node.js (LTS recommended)
+- A running Turborecs API / DB (local or Docker)
+
+### Install
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# from the frontend directory (e.g. ./web)
+npm install
