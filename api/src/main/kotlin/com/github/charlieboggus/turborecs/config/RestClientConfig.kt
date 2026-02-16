@@ -26,6 +26,7 @@ class RestClientConfig(
     fun openLibraryRestClient(): RestClient = RestClient.builder()
         .baseUrl(openLibraryProperties.baseUrl)
         .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+        .defaultHeader("User-Agent", openLibraryProperties.userAgent)
         .build()
 
     @Bean

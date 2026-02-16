@@ -1,7 +1,6 @@
-package com.github.charlieboggus.turborecs.client.dto
+package com.github.charlieboggus.turborecs.client.dto.tmdb
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.fasterxml.jackson.annotation.JsonProperty
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TmdbSearchResponse(

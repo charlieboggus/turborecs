@@ -11,14 +11,12 @@ import java.util.UUID
 @Entity
 @Table(name = "recommendations_log")
 class RecommendationLogEntity(
+
     @Id
     val id: UUID = UUID.randomUUID(),
 
     @Column(name = "batch_id", nullable = false)
     val batchId: UUID,
-
-    @Column(name = "slot", nullable = false)
-    val slot: Int,
 
     @Column(name = "model_version", nullable = false)
     val modelVersion: String,
@@ -50,8 +48,5 @@ class RecommendationLogEntity(
     val shownAt: Instant,
 
     @Column(name = "expires_at", nullable = false)
-    val expiresAt: Instant,
-
-    @Column(name = "replaced_by")
-    var replacedBy: UUID? = null
+    val expiresAt: Instant
 )

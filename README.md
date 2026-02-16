@@ -44,7 +44,6 @@ Instead of relying on simple genre matching or collaborative filtering, Turborec
 - 🤖 Automatic AI-powered tagging with weighted scores
 - 🎯 AI-generated recommendations based on your unique taste profile
 - 📊 Taste profile derived from weighted tag aggregation
-- 📥 CSV import from Letterboxd (Goodreads support planned)
 
 ### In Development
 This project is under active development. The core logging and AI tagging features are functional, but the recommendation engine and user experience are still being refined.
@@ -79,10 +78,10 @@ This project is under active development. The core logging and AI tagging featur
    # API Keys
    ANTHROPIC_API_KEY=your_claude_api_key
    TMDB_API_KEY=your_tmdb_api_key
+   OPEN_LIBRARY_USER_AGENT=your_open_library_user_agent_header
 
    # Internal Auth (generate random secure tokens)
    INTERNAL_AUTH_TOKEN=your_internal_token
-   ADMIN_AUTH_TOKEN=your_admin_token
    ```
 
 3. **Run with Docker Compose**

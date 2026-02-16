@@ -24,4 +24,6 @@ interface MediaItemRepository : JpaRepository<MediaItemEntity, UUID> {
     fun findByOpenLibraryId(openLibraryId: String): MediaItemEntity?
 
     fun findAllByTaggingStatus(taggingStatus: TaggingStatus): List<MediaItemEntity>
+
+    fun countByMediaType(mediaType: MediaType): Long
 }

@@ -131,30 +131,27 @@ CREATE INDEX idx_exclusions_openlibrary ON exclusions (open_library_id) WHERE op
 -- ─────────────────────────────────────────────────────────────────────────────
 -- RECOMMENDATIONS LOG
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE TABLE recommendations_log (
-                                     id              uuid        PRIMARY KEY,
-                                     batch_id        uuid        NOT NULL,
-                                     slot            integer     NOT NULL,
-                                     model_version   text        NOT NULL,
-                                     media_type      text        NOT NULL,
-                                     title           text        NOT NULL,
-                                     year            integer,
-                                     creator         text,
-                                     reason          text        NOT NULL,
-                                     matched_tags    jsonb       NOT NULL DEFAULT '[]',
-                                     fingerprint     text        NOT NULL,
-                                     shown_at        timestamptz NOT NULL,
-                                     expires_at      timestamptz NOT NULL,
-                                     replaced_by     uuid,
 
-                                     CONSTRAINT chk_reco_type CHECK (media_type IN ('MOVIE', 'BOOK')),
-                                     CONSTRAINT uq_reco_batch_slot UNIQUE (batch_id, slot)
+CREATE TABLE recommendations_log (
+                            id              uuid        PRIMARY KEY,
+                            batch_id        uuid        NOT NULL,
+                            model_version   text        NOT NULL,
+                            media_type      text        NOT NULL,
+                            title           text        NOT NULL,
+                            year            integer,
+                            creator         text,
+                            reason          text        NOT NULL,
+                            matched_tags    jsonb       NOT NULL DEFAULT '[]',
+                            fingerprint     text        NOT NULL,
+                            shown_at        timestamptz NOT NULL,
+                            expires_at      timestamptz NOT NULL,
+
+                            CONSTRAINT chk_reco_type CHECK (media_type IN ('MOVIE', 'BOOK'))
 );
 
 CREATE INDEX ix_reco_batch ON recommendations_log (batch_id);
 CREATE INDEX ix_reco_active ON recommendations_log (model_version, expires_at);
 CREATE INDEX ix_reco_fingerprint ON recommendations_log (model_version, fingerprint, expires_at);
-
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- HEALTHCHECK

@@ -8,7 +8,6 @@ import java.util.UUID
 @Entity
 @Table(name = "tags")
 class TagEntity(
-
     @Id
     val id: UUID = UUID.randomUUID(),
 

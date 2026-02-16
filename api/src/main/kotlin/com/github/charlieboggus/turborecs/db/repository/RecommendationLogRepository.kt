@@ -2,17 +2,34 @@ package com.github.charlieboggus.turborecs.db.repository
 
 import com.github.charlieboggus.turborecs.db.entities.RecommendationLogEntity
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 import java.time.Instant
 import java.util.UUID
 
 interface RecommendationLogRepository : JpaRepository<RecommendationLogEntity, UUID> {
 
-    // Load the current batch to display on the recommendations page
+    // Load all recommendations in a batch
     fun findAllByBatchId(batchId: UUID): List<RecommendationLogEntity>
 
-    // Get active (non-expired) recommendations for display
-    fun findAllByModelVersionAndExpiresAtAfter(modelVersion: String, now: Instant): List<RecommendationLogEntity>
+    // Find the most recent batch for cache check
+    @Query("""
+        SELECT DISTINCT r.batchId FROM RecommendationLogEntity r
+        WHERE r.modelVersion = :modelVersion AND r.shownAt > :since
+        ORDER BY r.batchId DESC
+    """)
+    fun findRecentBatchIds(
+        @Param("modelVersion") modelVersion: String,
+        @Param("since") since: Instant
+    ): List<UUID>
 
-    // Dedup: check if a fingerprint was already recommended and is still active
-    fun existsByModelVersionAndFingerprintAndExpiresAtAfter(modelVersion: String, fingerprint: String, now: Instant): Boolean
+    // Get all active (non-expired) fingerprints for dedup
+    @Query("""
+        SELECT r.fingerprint FROM RecommendationLogEntity r
+        WHERE r.modelVersion = :modelVersion AND r.expiresAt > :now
+    """)
+    fun findActiveFingerprints(
+        @Param("modelVersion") modelVersion: String,
+        @Param("now") now: Instant
+    ): List<String>
 }
