@@ -6,8 +6,8 @@ WORKDIR /workspace
 COPY gradlew ./
 COPY gradle ./gradle
 
-# Copy build files (adjust if you use settings.gradle.kts at repo root)
-COPY build.gradle.kts settings.gradle.kts ./
+# Copy build files
+COPY build.gradle settings.gradle ./
 
 # Copy source
 COPY src ./src
