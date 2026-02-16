@@ -6,7 +6,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks: [internal]
-    # no ports:
 
   api:
     build:
@@ -16,7 +15,6 @@ services:
     depends_on:
       - db
     networks: [internal]
-    # no ports:
 
   web:
     build:
@@ -25,9 +23,8 @@ services:
       - api
     networks: [internal]
     environment:
-      API_INTERNAL_URL: http://api:8080
-      API_INTERNAL_TOKEN: ${INTERNAL_AUTH_TOKEN}
-      API_ADMIN_TOKEN: ${ADMIN_AUTH_TOKEN}
+      TURBORECS_API_URL: http://api:8080
+      TURBORECS_INTERNAL_TOKEN: ${INTERNAL_AUTH_TOKEN}
     ports:
       - "3000:3000"
 

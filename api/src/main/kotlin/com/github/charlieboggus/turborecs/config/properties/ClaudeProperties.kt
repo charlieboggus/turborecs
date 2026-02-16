@@ -4,9 +4,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 @ConfigurationProperties(prefix = "turborecs.claude")
 data class ClaudeProperties(
+    val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val maxTokens: Int = 1024,
-    val connectTimeoutMs: Int = 5_000,
-    val readTimeoutMs: Int = 30_000
+    val connectionTimeoutMs: Int = 5_000,
+    val readTimeoutMs: Int = 30_000,
 )

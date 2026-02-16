@@ -1,102 +1,74 @@
 package com.github.charlieboggus.turborecs.service
 
+import com.github.charlieboggus.turborecs.common.enums.TagCategory
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
-import com.github.charlieboggus.turborecs.db.entity.enums.TagCategory
 import com.github.charlieboggus.turborecs.db.repository.MediaTagRepository
-import org.slf4j.LoggerFactory
+import com.github.charlieboggus.turborecs.dto.response.TasteProfileResponse
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import kotlin.math.max
-
-data class TasteProfile(
-    val themes: Map<String, Double>,
-    val moods: Map<String, Double>,
-    val tones: Map<String, Double>,
-    val settings: Map<String, Double>,
-    val topRatedTitles: List<String>,
-    val lowRatedTitles: List<String>
-)
 
 @Service
 class TasteProfileService(
-    private val mediaTagRepository: MediaTagRepository,
-    private val claudeProperties: ClaudeProperties
+    private val claudeProperties: ClaudeProperties,
+    private val mediaTagRepository: MediaTagRepository
 ) {
-    private val log = LoggerFactory.getLogger(TasteProfileService::class.java)
-
-    private companion object {
-        const val TOP_TAGS_PER_CATEGORY = 15
-        const val TOP_TITLES = 10
-    }
-
-    /**
-     * Compute taste profile on-demand from:
-     * - latest rated watch_history per media item
-     * - tags for the given modelVersion
-     *
-     * No DB persistence; this is a computed view.
-     */
-    fun buildTasteProfile(modelVersion: String = claudeProperties.model): TasteProfile {
-        val rows = mediaTagRepository.fetchTasteRows(modelVersion)
-        if (rows.isEmpty()) {
-            return TasteProfile(emptyMap(), emptyMap(), emptyMap(), emptyMap(), emptyList(), emptyList())
+    @Transactional(readOnly = true)
+    fun buildTasteProfile(): TasteProfileResponse {
+        val modelVersion = claudeProperties.model
+        val items = mediaTagRepository.findAllByModelVersion(modelVersion)
+        if (items.isEmpty()) {
+            return TasteProfileResponse(emptyMap(), emptyMap(), emptyMap(),
+                emptyMap(), emptyList(), emptyList())
         }
-
-        // title -> rating (dedup per title; if multiple rows repeat, last write wins but rating should be same)
         val ratingByTitle = LinkedHashMap<String, Int>()
-
-        // category -> (tag -> score)
-        val accum: MutableMap<TagCategory, MutableMap<String, Double>> = linkedMapOf(
+        val acc: MutableMap<TagCategory, MutableMap<String, Double>> = linkedMapOf(
             TagCategory.THEME to linkedMapOf(),
             TagCategory.MOOD to linkedMapOf(),
             TagCategory.TONE to linkedMapOf(),
-            TagCategory.SETTING to linkedMapOf(),
+            TagCategory.SETTING to linkedMapOf()
         )
-
-        for (r in rows) {
-            val title = r.getTitle().trim()
+        for (item in items) {
+            val title = item.mediaItem.title.trim()
             if (title.isEmpty()) {
                 continue
             }
 
-            val rating = r.getRating().coerceIn(0, 5)
+            val rating = item.mediaItem.rating!!
             ratingByTitle[title] = rating
 
-            val category = parseCategoryOrNull(r.getCategory()) ?: run {
-                log.warn("Skipping taste row with unknown category='{}' (title='{}')", r.getCategory(), title)
+            val category = parseCategory(item.tag.category.toString()) ?: run {
                 continue
             }
 
-            val tagName = normalizeTagName(r.getTagName())
+            val tagName = normalizeTagName(item.tag.name)
             if (tagName.isEmpty()) {
                 continue
             }
 
-            val tagWeight = r.getTagWeight()
-            val contribution = tagWeight * ratingMultiplier(rating)
-            if (contribution == 0.0) {
+            val tagWeight = item.weight
+            val contribution = tagWeight * getRatingMultiplier(rating)
+            if (contribution <= 0.0) {
                 continue
             }
 
-            val map = accum.getValue(category)
+            val map = acc.getValue(category)
             map[tagName] = (map[tagName] ?: 0.0) + contribution
         }
-
-        val themes = normalize(accum.getValue(TagCategory.THEME), TOP_TAGS_PER_CATEGORY)
-        val moods = normalize(accum.getValue(TagCategory.MOOD), TOP_TAGS_PER_CATEGORY)
-        val tones = normalize(accum.getValue(TagCategory.TONE), TOP_TAGS_PER_CATEGORY)
-        val settings = normalize(accum.getValue(TagCategory.SETTING), TOP_TAGS_PER_CATEGORY)
-
+        val themes = normalize(acc.getValue(TagCategory.THEME), 15)
+        val moods = normalize(acc.getValue(TagCategory.MOOD), 15)
+        val tones = normalize(acc.getValue(TagCategory.TONE), 15)
+        val settings = normalize(acc.getValue(TagCategory.SETTING), 15)
         val topRatedTitles = ratingByTitle.entries
             .sortedByDescending { it.value }
-            .take(TOP_TITLES)
+            .take(5)
             .map { it.key }
-
         val lowRatedTitles = ratingByTitle.entries
             .sortedBy { it.value }
-            .take(TOP_TITLES)
+            .take(5)
             .map { it.key }
 
-        return TasteProfile(
+        return TasteProfileResponse(
             themes = themes,
             moods = moods,
             tones = tones,
@@ -106,30 +78,32 @@ class TasteProfileService(
         )
     }
 
-    private fun parseCategoryOrNull(raw: String?): TagCategory? {
+    private fun parseCategory(raw: String?): TagCategory? {
         val s = raw?.trim().orEmpty()
         if (s.isEmpty()) {
             return null
         }
         return try {
             TagCategory.valueOf(s)
-        } catch (_: IllegalArgumentException) {
+        }
+        catch (_: IllegalArgumentException) {
             null
         }
     }
 
-    private fun normalizeTagName(name: String?): String =
-        name.orEmpty()
+    private fun normalizeTagName(name: String?): String {
+        return name.orEmpty()
             .trim()
             .replace(Regex("\\s+"), " ")
             .replace(Regex("""^[\p{Punct}\s]+|[\p{Punct}\s]+$"""), "")
             .lowercase()
+    }
 
     private fun normalize(m: Map<String, Double>, topN: Int): Map<String, Double> {
         if (m.isEmpty()) {
             return emptyMap()
         }
-        val maxVal = m.values.fold(0.0) { acc, v -> max(acc, v) }
+        val maxVal = m.values.fold(0.0) { a, b -> max(a, b) }
         if (maxVal <= 0.0) {
             return emptyMap()
         }
@@ -139,7 +113,7 @@ class TasteProfileService(
             .associate { it.key to (it.value / maxVal) }
     }
 
-    private fun ratingMultiplier(rating: Int): Double = when (rating) {
+    private fun getRatingMultiplier(rating: Int): Double = when (rating) {
         5 -> 2.0
         4 -> 1.5
         3 -> 1.0

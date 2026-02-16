@@ -1,53 +1,51 @@
 package com.github.charlieboggus.turborecs.service
 
-import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.core.JsonToken
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.charlieboggus.turborecs.client.ClaudeClient
+import com.github.charlieboggus.turborecs.common.enums.MediaType
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
-import com.github.charlieboggus.turborecs.db.entity.RecommendationLogEntity
-import com.github.charlieboggus.turborecs.db.entity.enums.MediaType
-import com.github.charlieboggus.turborecs.db.entity.enums.RecommendationSelection
+import com.github.charlieboggus.turborecs.db.entities.RecommendationLogEntity
+import com.github.charlieboggus.turborecs.db.repository.ExclusionRepository
 import com.github.charlieboggus.turborecs.db.repository.MediaItemRepository
 import com.github.charlieboggus.turborecs.db.repository.RecommendationLogRepository
-import com.github.charlieboggus.turborecs.web.dto.RecommendationGridResponse
-import com.github.charlieboggus.turborecs.web.dto.RecommendationTileResponse
+import com.github.charlieboggus.turborecs.dto.response.RecommendationGridResponse
+import com.github.charlieboggus.turborecs.dto.response.RecommendationResponse
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
-import kotlin.random.Random
 
 data class Recommendation(
     val title: String,
-    val type: MediaType,
+    val mediaType: MediaType,
     val year: Int?,
     val creator: String?,
     val reason: String,
-    val matchedThemes: List<String>
+    val matchedTags: List<String>
 )
-
-private data class ParsedRecommendations(
-    val items: List<Recommendation>,
-    val partial: Boolean,           // true if parsing ended early (likely truncation)
-    val parseError: String? = null  // optional: useful for logging
-)
-
-private val GRID_SIZE = 15
-private val COOLDOWN_DAYS = 30L
-private val GRID_STICKY_HOURS = 24L
 
 @Service
 class RecommendationService(
     private val tasteProfileService: TasteProfileService,
-    private val claudeApiService: ClaudeApiService,
+    private val claudeClient: ClaudeClient,
     private val claudeProperties: ClaudeProperties,
     private val objectMapper: ObjectMapper,
     private val mediaItemRepository: MediaItemRepository,
+    private val exclusionRepository: ExclusionRepository,
     private val recommendationLogRepository: RecommendationLogRepository
 ) {
     private val log = LoggerFactory.getLogger(RecommendationService::class.java)
+
+    companion object {
+        private const val GRID_SIZE = 15
+        private const val COOLDOWN_DAYS = 30L
+        private const val CACHE_HOURS = 24L
+        private const val MAX_GENERATION_ATTEMPTS = 4
+    }
 
     private val systemPrompt: String = """
         You are a media recommendation engine. Given a user's taste profile (themes, moods, 
@@ -56,7 +54,7 @@ class RecommendationService(
 
         Rules:
         - NEVER recommend anything from the topRatedTitles or lowRatedTitles lists
-        - NEVER recommend anything in the "alreadyKnownTitles" list
+        - NEVER recommend anything in the "alreadyKnownTitles" or "excludedTitles" lists
         - Recommend things the user likely hasn't encountered — avoid the most obvious picks
         - For cross-media recommendations, find thematic connections, not surface-level genre matches
         - Don't recommend sequels unless the user has seen/read the preceding entries
@@ -68,27 +66,132 @@ class RecommendationService(
         - year: number|null
         - creator: string|null
         - reason: string (2-3 sentences, reference specific profile tags)
-        - matchedThemes: string array (3-5 specific tags from their profile this connects to)
+        - matchedTags: string array (3-5 specific tags from their profile this connects to)
 
         Return ONLY valid JSON. No markdown, no explanation, no backticks.
     """.trimIndent()
 
-    fun recommend(
-        count: Int = 10,
-        mediaType: MediaType? = null,
-        modelVersion: String = claudeProperties.model
-    ): List<Recommendation> {
-        require(count in 1..15) { "count must be between 1 and 15" }
-        val profile = tasteProfileService.buildTasteProfile(modelVersion)
-        val alreadyKnownTitles: List<String> = when (mediaType) {
-            null -> mediaItemRepository.findAllTitles()
-            else -> mediaItemRepository.findAllTitlesByMediaType(mediaType)
+    /**
+     * Returns the current cached grid if it exists and is fresh,
+     * otherwise generates a new one.
+     */
+    @Transactional
+    fun getOrRefreshGrid(mediaType: MediaType? = null): RecommendationGridResponse {
+        val modelVersion = claudeProperties.model
+        val now = Instant.now()
+        val since = now.minus(Duration.ofHours(CACHE_HOURS))
+        val cachedBatchId = recommendationLogRepository
+            .findRecentBatchIds(modelVersion, since)
+            .firstOrNull()
+        if (cachedBatchId != null) {
+            val rows = recommendationLogRepository.findAllByBatchId(cachedBatchId)
+            if (rows.size == GRID_SIZE) {
+                log.info("Returning cached grid batchId={} ({} items)", cachedBatchId, rows.size)
+                return toGridResponse(cachedBatchId, rows)
+            }
         }
+        return generateGrid(mediaType)
+    }
+
+    /**
+     * Forces generation of a brand-new grid, ignoring any cache.
+     */
+    @Transactional
+    fun forceRefreshGrid(mediaType: MediaType? = null): RecommendationGridResponse {
+        return generateGrid(mediaType)
+    }
+
+    private fun generateGrid(mediaType: MediaType?): RecommendationGridResponse {
+        val modelVersion = claudeProperties.model
+        val now = Instant.now()
+        val batchId = UUID.randomUUID()
+        val activeFingerprints = recommendationLogRepository
+            .findActiveFingerprints(modelVersion, now)
+            .toMutableSet()
+        val items = generateDistinctRecommendations(
+            mediaType = mediaType,
+            count = GRID_SIZE,
+            activeFingerprints = activeFingerprints
+        )
+        val expiresAt = now.plus(Duration.ofDays(COOLDOWN_DAYS))
+        val rows = items.map { rec ->
+            RecommendationLogEntity(
+                batchId = batchId,
+                modelVersion = modelVersion,
+                mediaType = rec.mediaType,
+                title = rec.title,
+                year = rec.year,
+                creator = rec.creator,
+                reason = rec.reason,
+                matchedTags = rec.matchedTags,
+                fingerprint = fingerprint(rec),
+                shownAt = now,
+                expiresAt = expiresAt
+            )
+        }
+        recommendationLogRepository.saveAll(rows)
+        log.info("Generated new grid batchId={} with {} items", batchId, rows.size)
+        return toGridResponse(batchId, rows)
+    }
+
+    private fun generateDistinctRecommendations(
+        mediaType: MediaType?,
+        count: Int,
+        activeFingerprints: MutableSet<String>
+    ): List<Recommendation> {
+        val collected = mutableListOf<Recommendation>()
+        for (attempt in 1..MAX_GENERATION_ATTEMPTS) {
+            if (collected.size >= count) {
+                break
+            }
+            val remaining = count - collected.size
+            val batch = callClaude(
+                mediaType = mediaType,
+                count = minOf(15, remaining + 3), // request a few extra to account for dedup filtering
+            )
+            for (rec in batch) {
+                val fp = fingerprint(rec)
+                if (fp in activeFingerprints) {
+                    continue
+                }
+                activeFingerprints += fp
+                collected += rec
+                if (collected.size >= count) {
+                    break
+                }
+            }
+            if (batch.isEmpty()) {
+                log.warn("Claude returned 0 recommendations on attempt {}", attempt)
+                break
+            }
+        }
+        if (collected.size < count) {
+            log.warn("Only generated {} of {} requested recommendations after {} attempts",
+                collected.size, count, MAX_GENERATION_ATTEMPTS)
+        }
+        return collected
+    }
+
+    private fun callClaude(
+        mediaType: MediaType?,
+        count: Int,
+    ): List<Recommendation> {
+        val profile = tasteProfileService.buildTasteProfile()
+
+        val libraryTitles = mediaItemRepository.findAll()
+            .map { it.title.trim().lowercase() }
+            .toSet()
+
+        val excludedTitles = exclusionRepository.findAll()
+            .map { it.title.trim().lowercase() }
+            .toSet()
+
         val typeInstruction = when (mediaType) {
             MediaType.MOVIE -> "Recommend ONLY movies."
             MediaType.BOOK -> "Recommend ONLY books."
             null -> "Recommend a mix of movies and books."
         }
+
         val userMessage = buildString {
             appendLine("Here is my taste profile:")
             appendLine()
@@ -100,96 +203,79 @@ class RecommendationService(
             appendLine("Titles I loved (4-5 stars): ${profile.topRatedTitles.joinToString(", ")}")
             appendLine("Titles I disliked (1-2 stars): ${profile.lowRatedTitles.joinToString(", ")}")
             appendLine()
-            appendLine("alreadyKnownTitles that I have already watched/read (DO NOT recommend):")
-            appendLine(alreadyKnownTitles.joinToString(", "))
+            appendLine("alreadyKnownTitles (DO NOT recommend): ${libraryTitles.joinToString(", ")}")
+            appendLine("excludedTitles (DO NOT recommend): ${excludedTitles.joinToString(", ")}")
             appendLine()
             appendLine(typeInstruction)
             appendLine("Recommend exactly $count items.")
         }
-        val raw = claudeApiService.sendMessage(systemPrompt, userMessage)
-        val parsed = parseRecommendations(raw)
-        if (parsed.partial) {
-            log.warn(
-                "Claude recommendations parse was partial (likely truncation). parsedItems={}, requestedCount={}, err={}",
-                parsed.items.size, count, parsed.parseError
-            )
-        }
-        val alreadyKnownLower = alreadyKnownTitles.asSequence().map { it.trim().lowercase() }.toHashSet()
-        val filtered = parsed.items
-            .asSequence()
+
+        val raw = claudeClient.sendMessage(systemPrompt, userMessage)
+        return parseAndFilter(raw, mediaType, libraryTitles + excludedTitles)
+    }
+
+    private fun parseAndFilter(
+        raw: String,
+        mediaType: MediaType?,
+        knownTitlesLower: Set<String>
+    ): List<Recommendation> {
+        val parsed = parseRecommendationsArray(raw)
+        return parsed
             .filter { it.title.isNotBlank() }
-            .filter { it.title.trim().lowercase() !in alreadyKnownLower }
-            .filter { mediaType == null || it.type == mediaType }
-            .distinctBy { it.title.trim().lowercase() to it.type }
-            .take(count)
-            .toList()
-        if (filtered.size < count) {
-            log.warn(
-                "RecommendationService returned {} items (requested {}), after filtering already-known titles",
-                filtered.size, count
-            )
-        }
-        return filtered
+            .filter { it.title.trim().lowercase() !in knownTitlesLower }
+            .filter { mediaType == null || it.mediaType == mediaType }
+            .distinctBy { it.title.trim().lowercase() to it.mediaType }
     }
 
-    private fun formatScores(scores: Map<String, Double>): String {
-        if (scores.isEmpty()) return "(none)"
-        return scores.entries.joinToString(", ") { (k, v) -> "$k (${String.format("%.2f", v)})" }
-    }
-
-    private fun parseRecommendations(raw: String): ParsedRecommendations {
+    private fun parseRecommendationsArray(raw: String): List<Recommendation> {
         val cleaned = stripCodeFences(raw).trim()
-        // Fast fail if it doesn't even start like an array
         if (!cleaned.startsWith("[")) {
             throw IllegalArgumentException("Claude recommendations response must be a JSON array")
         }
         val parser = objectMapper.factory.createParser(cleaned)
-        // Must start with array
-        val first = parser.nextToken()
-        if (first != JsonToken.START_ARRAY) {
+        val firstToken = parser.nextToken()
+        if (firstToken != JsonToken.START_ARRAY) {
             throw IllegalArgumentException("Claude recommendations response must be a JSON array")
         }
-        val out = mutableListOf<Recommendation>()
-        var partial = false
-        var parseError: String? = null
+        val results = mutableListOf<Recommendation>()
+        var truncated = false
         while (true) {
-            val next = parser.nextToken()
-            when (next) {
-                null -> {
-                    // truncated before END_ARRAY
-                    partial = true
-                    break
-                }
+            val token = parser.nextToken()
+            when (token) {
+                null -> { truncated = true; break }
                 JsonToken.END_ARRAY -> break
                 else -> {
                     try {
-                        // read exactly one element from the array
                         val node: JsonNode = objectMapper.readTree(parser)
-                        val rec = nodeToRecommendationOrNull(node)
-                        if (rec != null) out += rec
+                        nodeToRecommendation(node)?.let { results += it }
                     }
                     catch (e: Exception) {
-                        // likely truncated mid-object, stop and return what we have
-                        partial = true
-                        parseError = e.message
+                        truncated = true
+                        log.debug("Stopped parsing recommendations mid-array: {}", e.message)
                         break
                     }
                 }
             }
         }
-        return ParsedRecommendations(items = out, partial = partial, parseError = parseError)
+        if (truncated) {
+            log.warn("Claude recommendations were truncated. Parsed {} items before cutoff.", results.size)
+        }
+        return results
     }
 
-    private fun nodeToRecommendationOrNull(node: JsonNode): Recommendation? {
+    private fun nodeToRecommendation(node: JsonNode): Recommendation? {
         if (!node.isObject) {
             return null
         }
         val title = node.path("title").asText("").trim()
+        val reason = node.path("reason").asText("").trim()
+        if (title.isBlank() || reason.isBlank()) {
+            return null
+        }
         val typeStr = node.path("type").asText("").trim()
-        val type = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: return null
+        val mediaType = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: return null
         val year = node.path("year").let { y ->
             when {
-                y.isInt -> y.asInt()
                 y.isNumber -> y.asInt()
                 y.isTextual -> y.asText().toIntOrNull()
                 else -> null
@@ -200,44 +286,51 @@ class RecommendationService(
             ?.asText(null)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-        val reason = node.path("reason").asText("").trim()
-        if (title.isBlank() || reason.isBlank()) {
-            return null
+        val matchedTags = node.path("matchedTags").let { arr ->
+            if (arr.isArray) arr.mapNotNull { it.asText(null)?.trim()?.takeIf(String::isNotBlank) }.take(8)
+            else emptyList()
         }
-        val matchedThemes = parseStringArray(node.get("matchedThemes"))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .take(8)
         return Recommendation(
             title = title,
-            type = type,
+            mediaType = mediaType,
             year = year,
             creator = creator,
             reason = reason,
-            matchedThemes = matchedThemes
+            matchedTags = matchedTags
         )
     }
 
-    private fun parseStringArray(node: JsonNode?): List<String> {
-        if (node == null || node.isNull) {
-            return emptyList()
+    private fun toGridResponse(
+        batchId: UUID,
+        rows: List<RecommendationLogEntity>
+    ) = RecommendationGridResponse(
+        batchId = batchId,
+        items = rows.map { RecommendationResponse.from(it) }
+    )
+
+    private fun fingerprint(rec: Recommendation): String {
+        val t = normalize(rec.title)
+        val c = rec.creator?.let { normalize(it) }.orEmpty()
+        val y = rec.year?.toString().orEmpty()
+        return "${rec.mediaType.name}|$t|$y|$c"
+    }
+
+    private fun normalize(s: String): String =
+        s.lowercase().trim()
+            .replace(Regex("""\s+"""), " ")
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), "")
+            .replace(Regex("""^(the|a|an)\s+"""), "")
+
+    private fun formatScores(scores: Map<String, Double>): String {
+        if (scores.isEmpty()) {
+            return "(none)"
         }
-        if (!node.isArray) {
-            return emptyList()
-        }
-        val out = ArrayList<String>(node.size())
-        for (x in node) {
-            if (x.isTextual) {
-                out += x.asText()
-            }
-        }
-        return out
+        return scores.entries.joinToString(", ") { (k, v) -> "$k (${String.format("%.2f", v)})" }
     }
 
     private fun stripCodeFences(raw: String): String {
         var s = raw.trim()
         if (s.startsWith("```")) {
-            // remove leading fence line (``` or ```json etc.)
             val firstNewline = s.indexOf('\n')
             s = if (firstNewline >= 0) s.substring(firstNewline + 1) else s
         }
@@ -245,195 +338,5 @@ class RecommendationService(
             s = s.removeSuffix("```").trim()
         }
         return s.trim()
-    }
-
-    private fun norm(s: String): String =
-        s.lowercase()
-            .trim()
-            .replace(Regex("""\s+"""), " ")
-            .replace(Regex("""[^\p{L}\p{N}\s]"""), "")
-            .replace(Regex("""^(the|a|an)\s+"""), "")
-
-    private fun fingerprint(rec: Recommendation): String {
-        val t = norm(rec.title)
-        val c = rec.creator?.let { norm(it) }.orEmpty()
-        val y = rec.year?.toString().orEmpty()
-        return "${rec.type.name}|$t|$y|$c"
-    }
-
-    fun getOrCreateGrid(
-        selection: RecommendationSelection,
-        modelVersion: String = claudeProperties.model
-    ): RecommendationGridResponse {
-        val now = Instant.now()
-        val since = now.minus(Duration.ofHours(GRID_STICKY_HOURS))
-        val recentBatchId = recommendationLogRepository
-            .findRecentBatchIds(modelVersion, selection, since)
-            .firstOrNull()
-        if (recentBatchId != null) {
-            val rows = recommendationLogRepository.findByBatchIdAndReplacedByIsNullOrderBySlot(recentBatchId)
-            if (rows.size == GRID_SIZE) {
-                return toGridResponse(selection, recentBatchId, rows)
-            }
-            // If partial/corrupt, fall through and regenerate
-        }
-        return generateNewGrid(selection, modelVersion)
-    }
-
-    @Transactional
-    fun generateNewGrid(
-        selection: RecommendationSelection,
-        modelVersion: String = claudeProperties.model
-    ): RecommendationGridResponse {
-        val now = Instant.now()
-        val batchId = UUID.randomUUID()
-        val active = recommendationLogRepository.findActiveFingerprints(modelVersion, now).toHashSet()
-        val items = generateDistinctRecommendations(
-            selection = selection,
-            count = GRID_SIZE,
-            modelVersion = modelVersion,
-            activeFingerprints = active
-        )
-        val expiresAt = now.plus(Duration.ofDays(COOLDOWN_DAYS))
-        val rows = items.mapIndexed { idx, r ->
-            RecommendationLogEntity(
-                id = UUID.randomUUID(),
-                modelVersion = modelVersion,
-                selection = selection,
-                mediaType = r.type,
-                title = r.title,
-                year = r.year,
-                creator = r.creator,
-                reason = r.reason,
-                matchedThemes = r.matchedThemes.toMutableList(),
-                fingerprint = fingerprint(r),
-                batchId = batchId,
-                slot = idx,
-                shownAt = now,
-                expiresAt = expiresAt,
-                replacedBy = null
-            )
-        }
-        recommendationLogRepository.saveAll(rows)
-        return toGridResponse(selection, batchId, rows)
-    }
-
-    @Transactional
-    fun refreshSlot(
-        batchId: UUID,
-        slot: Int,
-        selection: RecommendationSelection,
-        modelVersion: String = claudeProperties.model
-    ): RecommendationTileResponse {
-        require(slot in 0 until GRID_SIZE) { "slot must be between 0 and ${GRID_SIZE - 1}" }
-        val now = Instant.now()
-
-        val existing = recommendationLogRepository.findByBatchIdAndReplacedByIsNullOrderBySlot(batchId)
-        val current = recommendationLogRepository.findByBatchIdAndSlotAndReplacedByIsNull(batchId, slot)
-            ?: throw NoSuchElementException("No active tile at slot=$slot for batchId=$batchId")
-        val active = recommendationLogRepository.findActiveFingerprints(modelVersion, now).toHashSet()
-        existing.forEach { active += it.fingerprint }
-
-        val replacementType = when (selection) {
-            RecommendationSelection.BOOKS -> MediaType.BOOK
-            RecommendationSelection.MOVIES -> MediaType.MOVIE
-            RecommendationSelection.BOTH -> if (Random.nextBoolean()) MediaType.MOVIE else MediaType.BOOK
-        }
-        val replacement = generateDistinctRecommendations(
-            selection = selection,
-            count = 1,
-            modelVersion = modelVersion,
-            activeFingerprints = active,
-            forceType = replacementType
-        ).firstOrNull() ?: throw IllegalStateException("Failed to generate replacement recommendation")
-        val expiresAt = now.plus(Duration.ofDays(COOLDOWN_DAYS))
-        val newRow = RecommendationLogEntity(
-            id = UUID.randomUUID(),
-            modelVersion = modelVersion,
-            selection = selection,
-            mediaType = replacement.type,
-            title = replacement.title,
-            year = replacement.year,
-            creator = replacement.creator,
-            reason = replacement.reason,
-            matchedThemes = replacement.matchedThemes.toMutableList(),
-            fingerprint = fingerprint(replacement),
-            batchId = batchId,
-            slot = slot,
-            shownAt = now,
-            expiresAt = expiresAt
-        )
-        recommendationLogRepository.save(newRow)
-        current.replacedBy = newRow.id
-        recommendationLogRepository.save(current)
-        return RecommendationTileResponse(
-            slot = slot,
-            id = requireNotNull(newRow.id),
-            title = newRow.title,
-            type = newRow.mediaType,
-            year = newRow.year,
-            creator = newRow.creator,
-            reason = newRow.reason,
-            matchedThemes = newRow.matchedThemes.toList()
-        )
-    }
-
-    private fun toGridResponse(
-        selection: RecommendationSelection,
-        batchId: UUID,
-        rows: List<RecommendationLogEntity>
-    ): RecommendationGridResponse =
-        RecommendationGridResponse(
-            batchId = batchId,
-            selection = selection,
-            items = rows.sortedBy { it.slot }.map {
-                RecommendationTileResponse(
-                    slot = it.slot,
-                    id = requireNotNull(it.id),
-                    title = it.title,
-                    type = it.mediaType,
-                    year = it.year,
-                    creator = it.creator,
-                    reason = it.reason,
-                    matchedThemes = it.matchedThemes.toList()
-                )
-            }
-        )
-
-    private fun generateDistinctRecommendations(
-        selection: RecommendationSelection,
-        count: Int,
-        modelVersion: String,
-        activeFingerprints: MutableSet<String>,
-        forceType: MediaType? = null
-    ): List<Recommendation> {
-        val out = mutableListOf<Recommendation>()
-        var attempts = 0
-        while (out.size < count && attempts < 6) {
-            attempts++
-            val typeParam: MediaType? = when {
-                forceType != null -> forceType
-                selection == RecommendationSelection.BOOKS -> MediaType.BOOK
-                selection == RecommendationSelection.MOVIES -> MediaType.MOVIE
-                else -> null // BOTH
-            }
-            val batch = recommend(
-                count = minOf(15, count - out.size),
-                mediaType = typeParam,
-                modelVersion = modelVersion
-            )
-            for (r in batch) {
-                val fp = fingerprint(r)
-                if (fp in activeFingerprints) {
-                    continue
-                }
-                activeFingerprints += fp
-                out += r
-                if (out.size == count) {
-                    break
-                }
-            }
-        }
-        return out
     }
 }
