@@ -47,6 +47,10 @@ The Turborecs web app is the UI for an AI-powered personal media recommendation 
 - Generate movie and book recommendations based on your stored taste profile
 - Recommendations are saved for 30 days or you can regenerate new ones at will
 
+### Exclusions
+- Explicitly exclude certain titles from ever being recommended to you
+- View a library-styled inventory of all your excluded titles so you can evolve the media you hate alongside the media you love
+
 ---
 
 ## Tech stack
