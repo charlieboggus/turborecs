@@ -5,7 +5,7 @@ import com.github.charlieboggus.turborecs.client.dto.claude.ClaudeErrorResponse
 import com.github.charlieboggus.turborecs.client.dto.claude.ClaudeMessage
 import com.github.charlieboggus.turborecs.client.dto.claude.ClaudeMessageRequest
 import com.github.charlieboggus.turborecs.client.dto.claude.ClaudeMessageResponse
-import com.github.charlieboggus.turborecs.client.exception.ClaudeApiException
+import com.github.charlieboggus.turborecs.error.ClaudeApiException
 import com.github.charlieboggus.turborecs.config.properties.ClaudeProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component

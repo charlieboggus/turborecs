@@ -29,7 +29,7 @@ class TmdbClient(private val tmdbRestClient: RestClient) {
         val responseEntity: TmdbMovieDetail
         val responseMs = measureTimeMillis {
             responseEntity = tmdbRestClient.get()
-                .uri("/movie/{id}", tmdbId)
+                .uri("/movie/{id}?append_to_response=credits", tmdbId)
                 .retrieve()
                 .body(TmdbMovieDetail::class.java)
                 ?: throw RuntimeException("TMDb movie not found: $tmdbId")

@@ -11,9 +11,12 @@ data class TmdbMovieDetail(
     @JsonProperty("poster_path") val posterPath: String?,
     val overview: String?,
     val runtime: Int?,
-    val genres: List<TmdbGenre>
+    val genres: List<TmdbGenre>,
+    val credits: TmdbCredits? = null
 ) {
     val year: Int? get() = releaseDate?.take(4)?.toIntOrNull()
     val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w500$it" }
-    val director: String? get() = null // populated from /credits endpoint if needed
+    val director: String? get() = credits?.crew
+        ?.firstOrNull { it.job == "Director" }
+        ?.name
 }

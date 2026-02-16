@@ -10,7 +10,7 @@ import com.github.charlieboggus.turborecs.db.entities.MediaMetadataEntity
 import com.github.charlieboggus.turborecs.db.repository.MediaItemRepository
 import com.github.charlieboggus.turborecs.dto.request.LogMediaRequest
 import com.github.charlieboggus.turborecs.dto.response.MediaItemResponse
-import com.github.charlieboggus.turborecs.exception.ItemAlreadyExistsException
+import com.github.charlieboggus.turborecs.error.ItemAlreadyExistsException
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort

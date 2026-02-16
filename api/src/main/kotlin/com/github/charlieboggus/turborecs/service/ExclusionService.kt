@@ -5,7 +5,7 @@ import com.github.charlieboggus.turborecs.db.entities.ExclusionEntity
 import com.github.charlieboggus.turborecs.db.repository.ExclusionRepository
 import com.github.charlieboggus.turborecs.dto.request.ExcludeMediaRequest
 import com.github.charlieboggus.turborecs.dto.response.ExclusionResponse
-import com.github.charlieboggus.turborecs.exception.ItemAlreadyExistsException
+import com.github.charlieboggus.turborecs.error.ItemAlreadyExistsException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID

@@ -1,4 +1,4 @@
-package com.github.charlieboggus.turborecs.client.exception
+package com.github.charlieboggus.turborecs.error
 
 class ClaudeApiException(
     message: String,
