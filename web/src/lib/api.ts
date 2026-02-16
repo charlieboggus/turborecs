@@ -1,112 +1,176 @@
-function isServer() {
-    return typeof window === "undefined"
+import type {
+  Exclusion,
+  MediaItem,
+  MediaSort,
+  MediaType,
+  RecommendationGrid,
+  SearchResult,
+  Stats,
+  TasteProfile,
+} from "./types"
+
+const API_BASE = process.env.TURBORECS_API_URL ?? "http://localhost:8080"
+
+const API_INTERNAL_TOKEN = process.env.TURBORECS_INTERNAL_TOKEN ?? ""
+
+const apiFetch = async <T>(path: string, options?: RequestInit): Promise<T> => {
+  const url = `${API_BASE}${path}`
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Auth": API_INTERNAL_TOKEN,
+      ...options?.headers,
+    },
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    throw new Error(`API error ${res.status}: ${body}`)
+  }
+  if (res.status === 204) {
+    return undefined as T
+  }
+  return res.json()
 }
 
-function apiBase(): string {
-    const base = process.env.API_INTERNAL_URL
-    if (!base) throw new Error("Missing API_INTERNAL_URL in environment")
-    return base.replace(/\/+$/, "")
+// ─────────────────────────────────────────────────────────────────────────────
+// Media Items (/api/media)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getAllMediaItems = async (
+  type?: MediaType,
+  sortBy?: MediaSort,
+  page?: number,
+  limit?: number,
+): Promise<MediaItem[]> => {
+  const params = new URLSearchParams()
+  if (type) {
+    params.set("type", type)
+  }
+  if (sortBy) {
+    params.set("sortBy", sortBy)
+  }
+  if (page) {
+    params.set("page", page.toString())
+  }
+  if (limit) {
+    params.set("limit", limit.toString())
+  }
+  const query = params.toString()
+  return apiFetch<MediaItem[]>(`/api/media${query ? `?${query}` : ""}`)
 }
 
-function buildUrl(path: string): string {
-    if (!path.startsWith("/"))
-        throw new Error(`api path must start with '/': ${path}`)
-
-    if (!isServer()) return `/api/proxy${path}`
-
-    return `${apiBase()}${path}`
+export const getMediaItem = async (id: string): Promise<MediaItem> => {
+  return apiFetch<MediaItem>(`/api/media/${id}`)
 }
 
-async function check(res: Response, method: string, path: string) {
-    if (res.ok) return
-    const text = await res.text().catch(() => "")
-    throw new Error(`${method} ${path} failed: ${res.status} ${text}`)
+export const logMediaItem = async (body: {
+  mediaType: MediaType
+  tmdbId?: string
+  openLibraryId?: string
+  rating?: number
+  consumedAt?: string
+}): Promise<MediaItem> => {
+  return apiFetch<MediaItem>("/api/media", {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
 }
 
-function mustEnv(name: string, value: string | undefined): string {
-    if (!value) throw new Error(`Missing env var: ${name}`)
-    return value
+export const rateMediaItem = async (
+  id: string,
+  rating: number,
+): Promise<MediaItem> => {
+  return apiFetch<MediaItem>(`/api/media/${id}/rating`, {
+    method: "PATCH",
+    body: JSON.stringify({ rating }),
+  })
 }
 
-function buildAuthHeaders(
-    includeContentType: boolean,
-): HeadersInit | undefined {
-    if (!isServer()) {
-        // Browser never needs tokens; proxy route adds them server-side.
-        return includeContentType
-            ? { "content-type": "application/json" }
-            : undefined
-    }
-
-    // Server-side only:
-    const h = new Headers()
-    if (includeContentType) h.set("content-type", "application/json")
-
-    const internal = process.env.INTERNAL_AUTH_TOKEN
-    const admin = process.env.ADMIN_AUTH_TOKEN
-
-    if (internal) h.set("X-Internal-Auth", internal)
-    if (admin) h.set("X-Admin-Auth", admin)
-
-    return h
+export const deleteMediaItem = async (id: string): Promise<void> => {
+  return apiFetch<void>(`/api/media/${id}`, {
+    method: "DELETE",
+  })
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-    const url = buildUrl(path)
-    const res = await fetch(url, {
-        cache: "no-store",
-        headers: buildAuthHeaders(false), // no content-type on GET
-    })
-    await check(res, "GET", path)
-    return (await res.json()) as T
+// ─────────────────────────────────────────────────────────────────────────────
+// Search (/api/search)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const searchMedia = async (
+  query: string,
+  type: MediaType,
+): Promise<SearchResult[]> => {
+  const params = new URLSearchParams({ query, type })
+  return apiFetch<SearchResult[]>(`/api/search?${params}`)
 }
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-    const url = buildUrl(path)
-    const res = await fetch(url, {
-        method: "POST",
-        headers: buildAuthHeaders(true),
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: "no-store",
-    })
-    await check(res, "POST", path)
-    return (await res.json()) as T
+// ─────────────────────────────────────────────────────────────────────────────
+// Recommendations (/api/recommendations)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getRecommendations = async (
+  mediaType?: MediaType,
+): Promise<RecommendationGrid> => {
+  const params = new URLSearchParams()
+  if (mediaType) {
+    params.set("mediaType", mediaType)
+  }
+  const query = params.toString()
+  return apiFetch<RecommendationGrid>(
+    `/api/recommendations${query ? `${query}` : ""}`,
+  )
 }
 
-export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
-    const url = buildUrl(path)
-    const res = await fetch(url, {
-        method: "PATCH",
-        headers: buildAuthHeaders(true),
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: "no-store",
-    })
-    await check(res, "PATCH", path)
-
-    if (res.status === 204) return undefined as T
-    return (await res.json()) as T
+export const refreshRecommendations = async (
+  mediaType?: MediaType,
+): Promise<RecommendationGrid> => {
+  const params = new URLSearchParams()
+  if (mediaType) {
+    params.set("mediaType", mediaType)
+  }
+  const query = params.toString()
+  return apiFetch<RecommendationGrid>(
+    `/api/recommendations/refresh${query ? `${query}` : ""}`,
+  )
 }
 
-export async function apiDelete(path: string): Promise<void> {
-    const url = buildUrl(path)
-    const res = await fetch(url, {
-        method: "DELETE",
-        cache: "no-store",
-        headers: buildAuthHeaders(false),
-    })
-    await check(res, "DELETE", path)
+// ─────────────────────────────────────────────────────────────────────────────
+// Exclusions
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getExclusions = async (): Promise<Exclusion[]> => {
+  return apiFetch<Exclusion[]>("/api/exclusions")
 }
 
-export async function apiPatchNoContent(
-    path: string,
-    body?: unknown,
-): Promise<void> {
-    const url = buildUrl(path)
-    const res = await fetch(url, {
-        method: "PATCH",
-        headers: buildAuthHeaders(true),
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: "no-store",
-    })
-    await check(res, "PATCH", path)
+export const excludeMedia = async (body: {
+  mediaType: MediaType
+  title: string
+  year?: number
+  tmdbId?: string
+  openLibraryId?: string
+  reason?: string
+}): Promise<Exclusion> => {
+  return apiFetch<Exclusion>("/api/exclusions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export const removeExclusion = async (id: string): Promise<void> => {
+  return apiFetch<void>(`/api/exclusions/${id}`, {
+    method: "DELETE",
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stats & Taste Profile (/api/stats & /api/taste-profile)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getStats = async (): Promise<Stats> => {
+  return apiFetch<Stats>("/api/stats")
+}
+
+export const getTasteProfile = async (): Promise<TasteProfile> => {
+  return apiFetch<TasteProfile>("/api/taste-profile")
 }
