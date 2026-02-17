@@ -37,6 +37,13 @@ const ACCENT_BORDER: Record<string, string> = {
   settings: "border-b-emerald-500",
 }
 
+function strengthLabel(weight: number): string {
+  if (weight >= 0.9) return "dominant"
+  if (weight >= 0.7) return "strong"
+  if (weight >= 0.5) return "moderate"
+  return "mild"
+}
+
 export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
   const [activeCategory, setActiveCategory] = useState<string>("themes")
 
@@ -52,6 +59,7 @@ export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
 
   return (
     <div>
+      {/* Tabs */}
       <div className="flex gap-1 border-b border-border mb-6">
         {CATEGORIES.map((cat) => {
           const isActive = activeCategory === cat.key
@@ -70,10 +78,13 @@ export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
           )
         })}
       </div>
+
+      {/* Tag Rows */}
       <div className="flex flex-col gap-0.5">
         {activeTags.map(([name, weight], i) => {
           const isTop = i === 0
           const dotSize = 6 + weight * 6
+
           return (
             <div
               key={name}
@@ -82,9 +93,12 @@ export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
               }`}
             >
               <div className="flex items-center gap-3">
+                {/* Rank */}
                 <span className="w-5 text-right text-[11px] font-medium tabular-nums text-muted-foreground/50">
                   {i + 1}
                 </span>
+
+                {/* Weighted dot */}
                 <span
                   className={`rounded-full shrink-0 ${activeMeta.accent}`}
                   style={{
@@ -93,6 +107,8 @@ export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
                     opacity: 0.35 + weight * 0.65,
                   }}
                 />
+
+                {/* Tag name */}
                 <span
                   className={`text-sm ${isTop ? "font-semibold" : "font-normal"}`}
                   style={{ opacity: 0.35 + weight * 0.65 }}
@@ -100,13 +116,20 @@ export function TasteProfileTabs({ profile }: { profile: TasteProfile }) {
                   {name}
                 </span>
               </div>
-              <span className="text-xs tabular-nums font-medium text-muted-foreground/50">
-                {weight.toFixed(2)}
+
+              {/* Strength label */}
+              <span className="text-[11px] text-muted-foreground/50">
+                {strengthLabel(weight)}
               </span>
             </div>
           )
         })}
       </div>
+
+      <p className="text-[11px] text-muted-foreground/30 mt-3 pl-3">
+        Tags are extracted from each item by AI and weighted by your ratings.
+        Higher-rated items contribute more.
+      </p>
     </div>
   )
 }

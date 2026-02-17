@@ -18,7 +18,7 @@ const apiFetch = async <T>(path: string, options?: RequestInit): Promise<T> => {
   const url = `${API_BASE}${path}`
   const res = await fetch(url, {
     ...options,
-    cache: 'no-store',
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       "X-Internal-Auth": API_INTERNAL_TOKEN,

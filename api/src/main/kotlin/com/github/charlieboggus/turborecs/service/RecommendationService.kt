@@ -19,13 +19,21 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
+data class MatchedDimension(
+    val dimension: String,
+    val userScore: Double,
+    val estimatedItemScore: Double,
+    val matchStrength: String // "strong", "moderate", "contrast"
+)
+
 data class Recommendation(
     val title: String,
     val mediaType: MediaType,
     val year: Int?,
     val creator: String?,
     val reason: String,
-    val matchedTags: List<String>
+    val matchedTags: List<String>,
+    val matchedDimensions: List<MatchedDimension>
 )
 
 @Service
@@ -48,33 +56,57 @@ class RecommendationService(
     }
 
     private val systemPrompt: String = """
-        You are a media recommendation engine. Given a user's taste profile (themes, moods, 
-        tones, and settings they enjoy, plus titles they loved and hated), recommend media 
-        they would enjoy.
+        You are a media recommendation engine that uses a 12-dimension taste vector to find precise matches.
+        
+        DIMENSION RUBRIC (each 0.0–1.0):
+        EMOTIONAL_INTENSITY:   0=detached/cerebral, 1=devastating/gut-punch
+        NARRATIVE_COMPLEXITY:  0=linear, 1=non-linear/multi-threaded
+        MORAL_AMBIGUITY:       0=clear heroes/villains, 1=gray zones
+        TONE_DARKNESS:         0=light/optimistic, 1=bleak/nihilistic
+        PACING:                0=slow-burn/meditative, 1=relentless/propulsive
+        HUMOR:                 0=dead serious, 1=pervasively funny
+        VIOLENCE_INTENSITY:    0=gentle, 1=graphic/brutal
+        INTELLECTUAL_DEPTH:    0=escapism, 1=ideas-driven
+        STYLISTIC_BOLDNESS:    0=conventional, 1=experimental/auteur
+        INTIMACY_SCALE:        0=epic scope, 1=claustrophobic/personal
+        REALISM:               0=fantastical/surreal, 1=grounded/naturalistic
+        CULTURAL_SPECIFICITY:  0=universal, 1=deep in specific place/era
 
-        Rules:
-        - NEVER recommend anything from the topRatedTitles or lowRatedTitles lists
-        - NEVER recommend anything in the "alreadyKnownTitles" or "excludedTitles" lists
-        - Recommend things the user likely hasn't encountered — avoid the most obvious picks
-        - For cross-media recommendations, find thematic connections, not surface-level genre matches
-        - Don't recommend sequels unless the user has seen/read the preceding entries
-        - Each recommendation should connect to multiple elements of their taste profile
+        MATCHING STRATEGY:
+        - Primary: match the user's tasteVector (high dimensions they like)
+        - Avoid: dimensions prominent in their antiVector (things they dislike)
+        - Supplemental: use tag preferences and loved/hated titles for flavor
+        - Cross-media: find thematic connections, not surface-level genre matches
+        - Avoid obvious picks; recommend things the user likely hasn't encountered
 
-        Return ONLY a JSON array of objects with these fields:
-        - title: string
-        - type: "MOVIE" or "BOOK"
-        - year: number|null
-        - creator: string|null
-        - reason: string (2-3 sentences, reference specific profile tags)
-        - matchedTags: string array (3-5 specific tags from their profile this connects to)
+        RULES:
+        - NEVER recommend anything from alreadyKnownTitles or excludedTitles
+        - Don't recommend sequels unless user has seen/read predecessors
+        - Each recommendation must connect to 2+ strong dimension matches
 
+        Return ONLY a JSON array. Each object must have:
+        {
+          "title": "string",
+          "type": "MOVIE" or "BOOK",
+          "year": number|null,
+          "creator": "string|null",
+          "reason": "2-3 sentences referencing specific dimensions and tags",
+          "matchedTags": ["tag1","tag2","tag3"],
+          "matchedDimensions": [
+            {"dimension":"TONE_DARKNESS","userScore":0.82,"estimatedItemScore":0.85,"matchStrength":"strong"},
+            {"dimension":"MORAL_AMBIGUITY","userScore":0.78,"estimatedItemScore":0.90,"matchStrength":"strong"}
+          ]
+        }
+
+        matchStrength: "strong" (scores within 0.15), "moderate" (within 0.30), "contrast" (deliberate mismatch for variety).
+        Include 2-4 matchedDimensions per recommendation.
+
+        Self-check: validate JSON, ensure count == N, never include excluded titles.
         Return ONLY valid JSON. No markdown, no explanation, no backticks.
     """.trimIndent()
 
-    /**
-     * Returns the current cached grid if it exists and is fresh,
-     * otherwise generates a new one.
-     */
+    // ── Public API ──────────────────────────────────────────────────────────
+
     @Transactional
     fun getOrRefreshGrid(mediaType: MediaType? = null): RecommendationGridResponse {
         val modelVersion = claudeProperties.model
@@ -93,29 +125,21 @@ class RecommendationService(
         return generateGrid(mediaType)
     }
 
-    /**
-     * Forces generation of a brand-new grid, ignoring any cache.
-     */
     @Transactional
     fun forceRefreshGrid(mediaType: MediaType? = null): RecommendationGridResponse {
         return generateGrid(mediaType)
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     fun getCachedGrid(mediaType: MediaType? = null): RecommendationGridResponse? {
         val active = recommendationLogRepository.findActiveRecommendations(Instant.now())
-        if (active.isEmpty()) {
-            return null
-        }
-        val items = if (mediaType != null) {
-            active.filter { it.mediaType == mediaType }
-        }
-        else {
-            active
-        }
-        val batchId = items.first().batchId
-        return toGridResponse(batchId, items)
+        if (active.isEmpty()) return null
+        val items = if (mediaType != null) active.filter { it.mediaType == mediaType } else active
+        if (items.isEmpty()) return null
+        return toGridResponse(items.first().batchId, items)
     }
+
+    // ── Generation ──────────────────────────────────────────────────────────
 
     private fun generateGrid(mediaType: MediaType?): RecommendationGridResponse {
         val modelVersion = claudeProperties.model
@@ -124,13 +148,19 @@ class RecommendationService(
         val activeFingerprints = recommendationLogRepository
             .findActiveFingerprints(modelVersion, now)
             .toMutableSet()
+
         val items = generateDistinctRecommendations(
             mediaType = mediaType,
             count = GRID_SIZE,
             activeFingerprints = activeFingerprints
         )
+
         val expiresAt = now.plus(Duration.ofDays(COOLDOWN_DAYS))
         val rows = items.map { rec ->
+            val dimJson = try {
+                objectMapper.writeValueAsString(rec.matchedDimensions)
+            } catch (_: Exception) { null }
+
             RecommendationLogEntity(
                 batchId = batchId,
                 modelVersion = modelVersion,
@@ -140,6 +170,7 @@ class RecommendationService(
                 creator = rec.creator,
                 reason = rec.reason,
                 matchedTags = rec.matchedTags,
+                matchedDimensions = dimJson,
                 fingerprint = fingerprint(rec),
                 shownAt = now,
                 expiresAt = expiresAt
@@ -157,24 +188,18 @@ class RecommendationService(
     ): List<Recommendation> {
         val collected = mutableListOf<Recommendation>()
         for (attempt in 1..MAX_GENERATION_ATTEMPTS) {
-            if (collected.size >= count) {
-                break
-            }
+            if (collected.size >= count) break
             val remaining = count - collected.size
             val batch = callClaude(
                 mediaType = mediaType,
-                count = minOf(15, remaining + 3), // request a few extra to account for dedup filtering
+                count = minOf(15, remaining + 3)
             )
             for (rec in batch) {
                 val fp = fingerprint(rec)
-                if (fp in activeFingerprints) {
-                    continue
-                }
+                if (fp in activeFingerprints) continue
                 activeFingerprints += fp
                 collected += rec
-                if (collected.size >= count) {
-                    break
-                }
+                if (collected.size >= count) break
             }
             if (batch.isEmpty()) {
                 log.warn("Claude returned 0 recommendations on attempt {}", attempt)
@@ -182,16 +207,15 @@ class RecommendationService(
             }
         }
         if (collected.size < count) {
-            log.warn("Only generated {} of {} requested recommendations after {} attempts",
+            log.warn("Only generated {} of {} requested after {} attempts",
                 collected.size, count, MAX_GENERATION_ATTEMPTS)
         }
         return collected
     }
 
-    private fun callClaude(
-        mediaType: MediaType?,
-        count: Int,
-    ): List<Recommendation> {
+    // ── Claude Call ──────────────────────────────────────────────────────────
+
+    private fun callClaude(mediaType: MediaType?, count: Int): List<Recommendation> {
         val profile = tasteProfileService.buildTasteProfile()
 
         val libraryTitles = mediaItemRepository.findAll()
@@ -209,13 +233,28 @@ class RecommendationService(
         }
 
         val userMessage = buildString {
-            appendLine("Here is my taste profile:")
-            appendLine()
-            appendLine("Top themes: ${formatScores(profile.themes)}")
-            appendLine("Top moods: ${formatScores(profile.moods)}")
-            appendLine("Top tones: ${formatScores(profile.tones)}")
-            appendLine("Top settings: ${formatScores(profile.settings)}")
-            appendLine()
+            // Primary signal: dimension vectors
+            if (profile.tasteVector.isNotEmpty()) {
+                appendLine("=== TASTE VECTOR (primary matching signal) ===")
+                appendLine(formatVector(profile.tasteVector))
+                appendLine()
+                if (profile.antiVector.any { it.value > 0.0 }) {
+                    appendLine("=== ANTI-VECTOR (dimensions to avoid) ===")
+                    appendLine(formatVector(profile.antiVector))
+                    appendLine()
+                }
+            }
+
+            // Supplemental signal: tags
+            if (profile.themes.isNotEmpty() || profile.moods.isNotEmpty()) {
+                appendLine("=== TAG PREFERENCES (supplemental flavor) ===")
+                if (profile.themes.isNotEmpty()) appendLine("Themes: ${formatScores(profile.themes)}")
+                if (profile.moods.isNotEmpty()) appendLine("Moods: ${formatScores(profile.moods)}")
+                if (profile.tones.isNotEmpty()) appendLine("Tones: ${formatScores(profile.tones)}")
+                if (profile.settings.isNotEmpty()) appendLine("Settings: ${formatScores(profile.settings)}")
+                appendLine()
+            }
+
             appendLine("Titles I loved (4-5 stars): ${profile.topRatedTitles.joinToString(", ")}")
             appendLine("Titles I disliked (1-2 stars): ${profile.lowRatedTitles.joinToString(", ")}")
             appendLine()
@@ -229,6 +268,8 @@ class RecommendationService(
         val raw = claudeClient.sendMessage(systemPrompt, userMessage)
         return parseAndFilter(raw, mediaType, libraryTitles + excludedTitles)
     }
+
+    // ── Parsing ─────────────────────────────────────────────────────────────
 
     private fun parseAndFilter(
         raw: String,
@@ -264,32 +305,30 @@ class RecommendationService(
                     try {
                         val node: JsonNode = objectMapper.readTree(parser)
                         nodeToRecommendation(node)?.let { results += it }
-                    }
-                    catch (e: Exception) {
+                    } catch (e: Exception) {
                         truncated = true
-                        log.debug("Stopped parsing recommendations mid-array: {}", e.message)
+                        log.debug("Stopped parsing mid-array: {}", e.message)
                         break
                     }
                 }
             }
         }
         if (truncated) {
-            log.warn("Claude recommendations were truncated. Parsed {} items before cutoff.", results.size)
+            log.warn("Claude recommendations truncated. Parsed {} items.", results.size)
         }
         return results
     }
 
     private fun nodeToRecommendation(node: JsonNode): Recommendation? {
-        if (!node.isObject) {
-            return null
-        }
+        if (!node.isObject) return null
+
         val title = node.path("title").asText("").trim()
         val reason = node.path("reason").asText("").trim()
-        if (title.isBlank() || reason.isBlank()) {
-            return null
-        }
+        if (title.isBlank() || reason.isBlank()) return null
+
         val typeStr = node.path("type").asText("").trim()
         val mediaType = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: return null
+
         val year = node.path("year").let { y ->
             when {
                 y.isNumber -> y.asInt()
@@ -297,51 +336,69 @@ class RecommendationService(
                 else -> null
             }
         }
+
         val creator = node.path("creator")
             .takeIf { !it.isMissingNode && !it.isNull }
-            ?.asText(null)
-            ?.trim()
-            ?.takeIf { it.isNotBlank() }
+            ?.asText(null)?.trim()?.takeIf { it.isNotBlank() }
+
         val matchedTags = node.path("matchedTags").let { arr ->
             if (arr.isArray) arr.mapNotNull { it.asText(null)?.trim()?.takeIf(String::isNotBlank) }.take(8)
             else emptyList()
         }
+
+        val matchedDimensions = node.path("matchedDimensions").let { arr ->
+            if (arr.isArray) {
+                arr.mapNotNull { dimNode ->
+                    try {
+                        MatchedDimension(
+                            dimension = dimNode.path("dimension").asText(""),
+                            userScore = dimNode.path("userScore").asDouble(0.0),
+                            estimatedItemScore = dimNode.path("estimatedItemScore").asDouble(0.0),
+                            matchStrength = dimNode.path("matchStrength").asText("moderate")
+                        )
+                    } catch (_: Exception) { null }
+                }.take(6)
+            } else emptyList()
+        }
+
         return Recommendation(
             title = title,
             mediaType = mediaType,
             year = year,
             creator = creator,
             reason = reason,
-            matchedTags = matchedTags
+            matchedTags = matchedTags,
+            matchedDimensions = matchedDimensions
         )
     }
 
-    private fun toGridResponse(
-        batchId: UUID,
-        rows: List<RecommendationLogEntity>
-    ) = RecommendationGridResponse(
-        batchId = batchId,
-        items = rows.map { RecommendationResponse.from(it) }
-    )
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private fun toGridResponse(batchId: UUID, rows: List<RecommendationLogEntity>) =
+        RecommendationGridResponse(
+            batchId = batchId,
+            items = rows.map { RecommendationResponse.from(it) }
+        )
 
     private fun fingerprint(rec: Recommendation): String {
-        val t = normalize(rec.title)
-        val c = rec.creator?.let { normalize(it) }.orEmpty()
+        val t = normalizeFp(rec.title)
+        val c = rec.creator?.let { normalizeFp(it) }.orEmpty()
         val y = rec.year?.toString().orEmpty()
         return "${rec.mediaType.name}|$t|$y|$c"
     }
 
-    private fun normalize(s: String): String =
+    private fun normalizeFp(s: String): String =
         s.lowercase().trim()
             .replace(Regex("""\s+"""), " ")
             .replace(Regex("""[^\p{L}\p{N}\s]"""), "")
             .replace(Regex("""^(the|a|an)\s+"""), "")
 
+    private fun formatVector(vec: Map<String, Double>): String =
+        vec.entries.joinToString(", ") { (k, v) -> "$k=${String.format("%.2f", v)}" }
+
     private fun formatScores(scores: Map<String, Double>): String {
-        if (scores.isEmpty()) {
-            return "(none)"
-        }
-        return scores.entries.joinToString(", ") { (k, v) -> "$k (${String.format("%.2f", v)})" }
+        if (scores.isEmpty()) return "(none)"
+        return scores.entries.take(8).joinToString(", ") { (k, v) -> "$k (${String.format("%.2f", v)})" }
     }
 
     private fun stripCodeFences(raw: String): String {
@@ -350,9 +407,7 @@ class RecommendationService(
             val firstNewline = s.indexOf('\n')
             s = if (firstNewline >= 0) s.substring(firstNewline + 1) else s
         }
-        if (s.endsWith("```")) {
-            s = s.removeSuffix("```").trim()
-        }
+        if (s.endsWith("```")) s = s.removeSuffix("```").trim()
         return s.trim()
     }
 }

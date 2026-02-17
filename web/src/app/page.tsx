@@ -1,48 +1,22 @@
 import Link from "next/link"
-import { getStats, getTasteProfile } from "@/lib/api"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { getStats } from "@/lib/api"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import {
-  Film,
-  BookOpen,
-  Sparkles,
-  Search,
-  Ban,
-  Tag,
-  Library,
-  ArrowRight,
-  Star,
-  ThumbsDown,
-} from "lucide-react"
-import { TasteProfileTabs } from "@/components/taste-profile-tabs"
-import type { TasteProfile } from "@/lib/types"
+import { Sparkles, Search, Ban, Library, ArrowRight, User } from "lucide-react"
 
 export default async function HomePage() {
   let stats = null
-  let tasteProfile: TasteProfile | null = null
   try {
     stats = await getStats()
   } catch {
     // API might be down
   }
-  try {
-    tasteProfile = await getTasteProfile()
-  } catch {
-    // No taste profile yet
-  }
-  const hasProfile =
-    tasteProfile != null && Object.keys(tasteProfile.themes).length > 0
 
   return (
     <main className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-6 py-16">
+        {/* Header */}
         <div className="space-y-2">
           <h1 className="text-4xl font-bold tracking-tight">Turborecs</h1>
           <p className="text-lg text-muted-foreground">
@@ -50,68 +24,13 @@ export default async function HomePage() {
           </p>
         </div>
         <Separator className="my-8" />
-        {stats && (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <StatCard
-              icon={<Film className="h-4 w-4" />}
-              label="Movies"
-              value={stats.movieCount}
-            />
-            <StatCard
-              icon={<BookOpen className="h-4 w-4" />}
-              label="Books"
-              value={stats.bookCount}
-            />
-            <StatCard
-              icon={<Tag className="h-4 w-4" />}
-              label="Tags"
-              value={stats.uniqueTagCount}
-            />
-            <StatCard
-              icon={<Sparkles className="h-4 w-4" />}
-              label="Recommended"
-              value={stats.recommendationCount}
-            />
-          </div>
-        )}
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          <NavCard
-            href="/library"
-            icon={<Library className="h-5 w-5" />}
-            title="Library"
-            description="Browse your watched movies and read books."
-          />
-          <NavCard
-            href="/search"
-            icon={<Search className="h-5 w-5" />}
-            title="Search"
-            description="Find movies and books to add to your library or exclude."
-          />
-          <NavCard
-            href="/recommendations"
-            icon={<Sparkles className="h-5 w-5" />}
-            title="Recommendations"
-            description="AI-powered picks based on your taste profile."
-          />
-          <NavCard
-            href="/exclusions"
-            icon={<Ban className="h-5 w-5" />}
-            title="Exclusions"
-            description="Titles you never want recommended."
-          />
-        </div>
-        {hasProfile && tasteProfile && (
-          <>
-            <Separator className="my-10" />
-            <TasteProfileSection profile={tasteProfile} />
-          </>
-        )}
-        {stats && stats.totalItems === 0 && (
+        {stats && stats.totalItems === 0 ? (
+          // empty state
           <Card className="mt-10">
             <CardContent className="flex flex-col items-center gap-4 py-12">
               <p className="text-muted-foreground">
-                Your library is empty. Start by searching for something you've
-                watched or read.
+                Your library is empty. Start by searching for something
+                you&apos;ve watched or read.
               </p>
               <Button asChild>
                 <Link href="/search">
@@ -121,6 +40,67 @@ export default async function HomePage() {
               </Button>
             </CardContent>
           </Card>
+        ) : (
+          <>
+            {/* stats */}
+            {stats && stats.totalItems !== 0 && (
+              <div className="flex rounded-xl overflow-hidden border mb-8">
+                <StatCell label="Movies" value={stats.movieCount} />
+                <StatCell label="Books" value={stats.bookCount} />
+                <StatCell label="Tags" value={stats.uniqueTagCount} />
+                <StatCell label="Vectors" value={stats.vectorCount ?? 0} />
+                <StatCell label="Recs" value={stats.recommendationCount} />
+              </div>
+            )}
+
+            {/* Navigation */}
+            <Link href="/recommendations">
+              <Card className="p-0 gap-0 mb-4 group transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-purple-500/10 border-purple-500/20">
+                <div className="flex items-center justify-between p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
+                      <Sparkles className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-semibold text-purple-500 dark:text-purple-300">
+                        Recommendations
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        AI-powered picks based on your taste profile.
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className="h-5 w-5 text-purple-400/50 transition-transform group-hover:translate-x-0.5" />
+                </div>
+              </Card>
+            </Link>
+            <div className="grid grid-cols-2 gap-3">
+              <NavCard
+                href="/library"
+                icon={<Library className="h-4 w-4" />}
+                title="Library"
+                description="Browse your watched movies and read books."
+              />
+              <NavCard
+                href="/search"
+                icon={<Search className="h-4 w-4" />}
+                title="Search"
+                description="Find movies and books to add or exclude."
+              />
+              <NavCard
+                href="/profile"
+                icon={<User className="h-4 w-4" />}
+                title="Taste Profile"
+                description="Your media DNA — dimensions, tags, and preferences."
+              />
+              <NavCard
+                href="/exclusions"
+                icon={<Ban className="h-4 w-4" />}
+                title="Exclusions"
+                description="Titles you never want recommended."
+              />
+            </div>
+          </>
         )}
       </div>
     </main>
@@ -128,30 +108,17 @@ export default async function HomePage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stat Card
+// Stats Strip Cell
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: number
-}) {
+function StatCell({ label, value }: { label: string; value: number }) {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          {icon}
-          <span className="text-xs font-medium uppercase tracking-wide">
-            {label}
-          </span>
-        </div>
-        <p className="mt-2 text-3xl font-bold tabular-nums">{value}</p>
-      </CardContent>
-    </Card>
+    <div className="flex-1 bg-muted/30 py-4 px-3 text-center border-r last:border-r-0">
+      <div className="text-2xl font-bold tabular-nums">{value}</div>
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mt-1">
+        {label}
+      </div>
+    </div>
   )
 }
 
@@ -172,82 +139,18 @@ function NavCard({
 }) {
   return (
     <Link href={href}>
-      <Card className="h-full transition-colors hover:bg-muted/50">
-        <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+      <Card className="h-full p-0 gap-0 transition-colors hover:bg-muted/50">
+        <div className="flex items-start gap-3 p-4">
           <div className="mt-0.5 text-muted-foreground">{icon}</div>
           <div className="flex-1">
-            <CardTitle className="flex items-center justify-between text-base">
-              {title}
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </CardTitle>
-            <CardDescription className="mt-1">{description}</CardDescription>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">{title}</span>
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/40" />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{description}</p>
           </div>
-        </CardHeader>
+        </div>
       </Card>
     </Link>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Taste Profile Section
-// ─────────────────────────────────────────────────────────────────────────────
-
-function TasteProfileSection({ profile }: { profile: TasteProfile }) {
-  const hasTopRated = profile.topRatedTitles.length > 0
-  const hasLowRated = profile.lowRatedTitles.length > 0
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Taste Profile</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Built from your ratings and AI-generated tags.
-        </p>
-      </div>
-      <TasteProfileTabs profile={profile} />
-      {(hasTopRated || hasLowRated) && (
-        <div className="grid grid-cols-2 gap-8 mt-8">
-          {hasTopRated && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-3">
-                <Star className="h-3.5 w-3.5 text-amber-500" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Favorites
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                {profile.topRatedTitles.map((title) => (
-                  <span
-                    key={title}
-                    className="text-sm pl-5 text-muted-foreground"
-                  >
-                    {title}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {hasLowRated && (
-            <div>
-              <div className="flex items-center gap-1.5 mb-3">
-                <ThumbsDown className="h-3.5 w-3.5 text-muted-foreground/50" />
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Low Rated
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                {profile.lowRatedTitles.map((title) => (
-                  <span
-                    key={title}
-                    className="text-sm pl-5 text-muted-foreground/60"
-                  >
-                    {title}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   )
 }

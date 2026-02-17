@@ -68,6 +68,10 @@ export interface TasteProfile {
   settings: Record<string, number>
   topRatedTitles: string[]
   lowRatedTitles: string[]
+
+  tasteVector: Record<string, number>
+  antiVector: Record<string, number>
+  vectorCoverage: number
 }
 
 export interface Stats {
@@ -78,6 +82,7 @@ export interface Stats {
   tagAssignmentCount: number
   recommendationCount: number
   exclusionCount: number
+  vectorCount: number
 }
 
 export interface PaginatedResponse<T> {

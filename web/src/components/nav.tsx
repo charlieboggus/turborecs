@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Library, Search, Sparkles, Ban, Home } from "lucide-react"
+import { Library, Search, Sparkles, Ban, Home, User } from "lucide-react"
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/search", label: "Search", icon: Search },
   { href: "/recommendations", label: "Recommendations", icon: Sparkles },
   { href: "/exclusions", label: "Exclusions", icon: Ban },
+  { href: "/profile", label: "Profile", icon: User },
 ] as const
 
 export function Nav({ current }: { current: string }) {

@@ -1,5 +1,3 @@
-// app/exclusions/page.tsx
-
 import Link from "next/link"
 import { getExclusions } from "@/lib/api"
 import { Nav } from "@/components/nav"
