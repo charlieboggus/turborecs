@@ -78,6 +78,12 @@ class RecommendationService(
         - Supplemental: use tag preferences and loved/hated titles for flavor
         - Cross-media: find thematic connections, not surface-level genre matches
         - Avoid obvious picks; recommend things the user likely hasn't encountered
+        
+        REALITY CONSTRAINT:
+        - ONLY recommend real, published books and movies that exist in publicly available databases
+        - Do NOT invent, hallucinate, or fabricate titles
+        - If uncertain whether a title exists, do not recommend it
+        - Cross-reference against your knowledge of actual published works before including any recommendation
 
         RULES:
         - NEVER recommend anything from alreadyKnownTitles or excludedTitles
@@ -133,9 +139,18 @@ class RecommendationService(
     @Transactional(readOnly = true)
     fun getCachedGrid(mediaType: MediaType? = null): RecommendationGridResponse? {
         val active = recommendationLogRepository.findActiveRecommendations(Instant.now())
-        if (active.isEmpty()) return null
-        val items = if (mediaType != null) active.filter { it.mediaType == mediaType } else active
-        if (items.isEmpty()) return null
+        if (active.isEmpty()) {
+            return null
+        }
+        val items = if (mediaType != null) {
+            active.filter { it.mediaType == mediaType }
+        }
+        else {
+            active
+        }
+        if (items.isEmpty()) {
+            return null
+        }
         return toGridResponse(items.first().batchId, items)
     }
 
@@ -159,7 +174,8 @@ class RecommendationService(
         val rows = items.map { rec ->
             val dimJson = try {
                 objectMapper.writeValueAsString(rec.matchedDimensions)
-            } catch (_: Exception) { null }
+            }
+            catch (_: Exception) { null }
 
             RecommendationLogEntity(
                 batchId = batchId,
@@ -196,10 +212,14 @@ class RecommendationService(
             )
             for (rec in batch) {
                 val fp = fingerprint(rec)
-                if (fp in activeFingerprints) continue
+                if (fp in activeFingerprints) {
+                    continue
+                }
                 activeFingerprints += fp
                 collected += rec
-                if (collected.size >= count) break
+                if (collected.size >= count) {
+                    break
+                }
             }
             if (batch.isEmpty()) {
                 log.warn("Claude returned 0 recommendations on attempt {}", attempt)
@@ -305,7 +325,8 @@ class RecommendationService(
                     try {
                         val node: JsonNode = objectMapper.readTree(parser)
                         nodeToRecommendation(node)?.let { results += it }
-                    } catch (e: Exception) {
+                    }
+                    catch (e: Exception) {
                         truncated = true
                         log.debug("Stopped parsing mid-array: {}", e.message)
                         break
@@ -320,11 +341,15 @@ class RecommendationService(
     }
 
     private fun nodeToRecommendation(node: JsonNode): Recommendation? {
-        if (!node.isObject) return null
+        if (!node.isObject) {
+            return null
+        }
 
         val title = node.path("title").asText("").trim()
         val reason = node.path("reason").asText("").trim()
-        if (title.isBlank() || reason.isBlank()) return null
+        if (title.isBlank() || reason.isBlank()) {
+            return null
+        }
 
         val typeStr = node.path("type").asText("").trim()
         val mediaType = runCatching { MediaType.valueOf(typeStr) }.getOrNull() ?: return null
@@ -356,7 +381,8 @@ class RecommendationService(
                             estimatedItemScore = dimNode.path("estimatedItemScore").asDouble(0.0),
                             matchStrength = dimNode.path("matchStrength").asText("moderate")
                         )
-                    } catch (_: Exception) { null }
+                    }
+                    catch (_: Exception) { null }
                 }.take(6)
             } else emptyList()
         }
