@@ -12,16 +12,13 @@ import type {
 
 const API_BASE = process.env.TURBORECS_API_URL ?? "http://localhost:8080"
 
-const API_INTERNAL_TOKEN = process.env.TURBORECS_INTERNAL_TOKEN ?? ""
-
 const apiFetch = async <T>(path: string, options?: RequestInit): Promise<T> => {
   const url = `${API_BASE}${path}`
   const res = await fetch(url, {
     ...options,
-    cache: 'no-store',
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      "X-Internal-Auth": API_INTERNAL_TOKEN,
       ...options?.headers,
     },
   })
@@ -33,6 +30,24 @@ const apiFetch = async <T>(path: string, options?: RequestInit): Promise<T> => {
     return undefined as T
   }
   return res.json()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authentication
+// ────────────────────────────────────────────────────────────────────────────-
+
+export const verifyCredentials = async (
+  authHeader: string,
+): Promise<boolean> => {
+  try {
+    await apiFetch<void>("/api/auth/verify", {
+      method: "GET",
+      headers: { Authorization: authHeader },
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

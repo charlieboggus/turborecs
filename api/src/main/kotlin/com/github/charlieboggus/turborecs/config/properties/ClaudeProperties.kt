@@ -6,7 +6,5 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class ClaudeProperties(
     val baseUrl: String,
     val apiKey: String,
-    val model: String,
-    val connectionTimeoutMs: Int = 5_000,
-    val readTimeoutMs: Int = 30_000,
+    val model: String
 )

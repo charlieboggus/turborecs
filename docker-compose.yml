@@ -2,7 +2,7 @@ services:
   db:
     image: postgres:16
     env_file:
-      - ./.env
+      - ./.env.backend
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks: [internal]
@@ -11,7 +11,7 @@ services:
     build:
       context: ./api
     env_file:
-      - ./.env
+      - ./.env.backend
     depends_on:
       - db
     networks: [internal]
@@ -22,9 +22,10 @@ services:
     depends_on:
       - api
     networks: [internal]
+    env_file:
+      - ./.env.frontend
     environment:
       TURBORECS_API_URL: http://api:8080
-      TURBORECS_INTERNAL_TOKEN: ${INTERNAL_AUTH_TOKEN}
     ports:
       - "3000:3000"
 

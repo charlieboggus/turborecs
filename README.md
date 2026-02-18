@@ -68,7 +68,7 @@ This project is under active development. The core logging and AI tagging featur
 
 2. **Set up environment variables**
    
-   Create a `.env` file in the root directory:
+   Create a `.env.backend` file in the root directory for backend (API/DB) environment vars:
    ```env
    # PostgreSQL
    DB_JDBC_URL=jdbc:postgresql://db:5432/turborecs
@@ -81,8 +81,28 @@ This project is under active development. The core logging and AI tagging featur
    TMDB_API_KEY=your_tmdb_api_key
    OPEN_LIBRARY_USER_AGENT=your_open_library_user_agent_header
 
-   # Internal Auth (generate a random secure token)
-   INTERNAL_AUTH_TOKEN=your_internal_token
+   # Authentication (user login)
+   AUTH_USERNAME=your_username
+   AUTH_PASSWORD_HASH=your_password_hash # (SEE NOTES BELOW ON GENERATING HASH)
+   ```
+
+   **Note:** to generate a secure password hash run the following:
+   ```bash
+   pip install bcrypt
+   python3 -c "import bcrypt; h = bcrypt.hashpw(b'yourpassword', bcrypt.gensalt(10)).decode(); print(h.replace('\$', '\$\$'))"
+   ```
+   and then copy the output into the .env.backend value AUTH_PASSWORD_HASH
+   
+   Note: do not use htpasswd — it generates `$2y$` hashes which Spring does not accept.
+
+   Create a `.env.frontend` file in the root directory for frontend environment vars:
+   ```env
+   TURBORECS_JWT_TOKEN=your_secure_jwt_signing_token
+   ```
+
+   To generate a secure JWT signing token run the following:
+   ```bash
+   openssl rand -base64 32
    ```
 
 3. **Run with Docker Compose**

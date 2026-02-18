@@ -23,7 +23,8 @@ class MediaItemService(
     private val mediaItemRepository: MediaItemRepository,
     private val tmdbClient: TmdbClient,
     private val openLibraryClient: OpenLibraryClient,
-    private val taggingService: TaggingService
+    private val taggingService: TaggingService,
+    private val vectorScoringService: VectorScoringService
 ) {
 
     @Transactional(readOnly = true)
@@ -86,6 +87,7 @@ class MediaItemService(
         }
         val saved = mediaItemRepository.save(item)
         taggingService.tagItem(saved)
+        vectorScoringService.scoreItem(saved)
         return MediaItemResponse.from(saved)
     }
 

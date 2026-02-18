@@ -9,5 +9,6 @@ data class StatsResponse(
     val uniqueTagCount: Long,
     val tagAssignmentCount: Long,
     val recommendationCount: Long,
-    val exclusionCount: Long
+    val exclusionCount: Long,
+    val vectorCount: Long
 )

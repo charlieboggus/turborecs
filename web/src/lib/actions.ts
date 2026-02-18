@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
 import {
   deleteMediaItem,
   excludeMedia,
@@ -10,8 +11,38 @@ import {
   refreshRecommendations,
   removeExclusion,
   searchMedia,
+  verifyCredentials,
 } from "./api"
 import type { MediaType, SearchResult } from "./types"
+import { SignJWT } from "jose"
+
+const secret = new TextEncoder().encode(process.env.TURBORECS_JWT_SECRET)
+
+export const loginAction = async (
+  username: string,
+  password: string,
+): Promise<{ error?: string }> => {
+  const authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+  const valid = await verifyCredentials(authHeader)
+  if (!valid) {
+    return { error: "Invalid credentials" }
+  }
+  const token = await new SignJWT({})
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("7d")
+    .sign(secret)
+
+  const cookieStore = await cookies()
+  cookieStore.set("auth_session", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7,
+  })
+  return {}
+}
 
 export const logMediaAction = async (
   mediaType: MediaType,
@@ -80,7 +111,7 @@ export const getRecommendationsAction = async (mediaType?: MediaType) => {
   return getRecommendations(mediaType, true)
 }
 
-export async function checkCachedRecommendationsAction() {
+export const checkCachedRecommendationsAction = async () => {
   return getRecommendations(undefined, false)
 }
 

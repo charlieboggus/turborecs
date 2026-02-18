@@ -48,5 +48,9 @@ class RecommendationLogEntity(
     val shownAt: Instant,
 
     @Column(name = "expires_at", nullable = false)
-    val expiresAt: Instant
+    val expiresAt: Instant,
+
+    @Column(name = "matched_dimensions", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    var matchedDimensions: String? = null
 )
